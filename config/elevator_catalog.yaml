@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "notice_ru": "Нейтральные стартовые шаблоны без привязки к производителю. Все значения подлежат проверке и редактированию пользователем.",
+  "elevators": [
+    {"name": "Пользовательский 630 кг", "capacity_kg": 630, "nominal_passengers": 8, "speed_mps": 1.0, "door_width_m": 0.8},
+    {"name": "Пользовательский 1000 кг", "capacity_kg": 1000, "nominal_passengers": 13, "speed_mps": 1.6, "door_width_m": 0.9},
+    {"name": "Пользовательский 1600 кг", "capacity_kg": 1600, "nominal_passengers": 21, "speed_mps": 2.5, "door_width_m": 1.1}
+  ]
+}
+

@@ -1,0 +1,422 @@
+{
+  "schema_version": "1.0",
+  "registry_status": "gost_implemented",
+  "notice_ru": "Расчётный метод ГОСТ 34758-2021 реализован по разделам 5-7 и проверен по примеру приложения Д.",
+  "formulas": {
+    "calculated_car_capacity": {
+      "title_ru": "Расчётная вместимость кабины (предварительная)",
+      "standard": "ENGINEERING_PREVIEW",
+      "clause": null,
+      "expression": "C = min(Cном, окр₀,₅↑(Cном × kзап))",
+      "implementation": "src.engines.analytic_engine.calculated_capacity",
+      "unit": "пасс.",
+      "status": "engineering_preview",
+      "variables": {
+        "C": {"title_ru": "Расчётная вместимость кабины", "unit": "пасс."},
+        "Cном": {"title_ru": "Номинальная вместимость", "unit": "пасс."},
+        "kзап": {"title_ru": "Заданный пользователем коэффициент заполнения", "unit": "д.е."}
+      }
+    },
+    "probable_stops_uniform": {
+      "title_ru": "Ожидаемое число остановок при равномерном выборе этажей",
+      "standard": "ENGINEERING_PREVIEW",
+      "clause": null,
+      "expression": "S = N × [1 − ((N − 1) / N)^C]",
+      "implementation": "src.engines.analytic_engine.probable_stops_uniform",
+      "unit": "ост.",
+      "status": "engineering_preview",
+      "variables": {
+        "S": {"title_ru": "Ожидаемое число остановок", "unit": "ост."},
+        "N": {"title_ru": "Число этажей назначения", "unit": "эт."},
+        "C": {"title_ru": "Пассажиров в кабине", "unit": "пасс."}
+      }
+    },
+    "highest_reversal_uniform": {
+      "title_ru": "Ожидаемый наивысший этаж разворота при равномерном выборе",
+      "standard": "ENGINEERING_PREVIEW",
+      "clause": null,
+      "expression": "H = Σ[1 − ((k − 1) / N)^C], k=1..N",
+      "implementation": "src.engines.analytic_engine.expected_highest_reversal",
+      "unit": "эт.",
+      "status": "engineering_preview",
+      "variables": {
+        "H": {"title_ru": "Ожидаемый наивысший этаж разворота", "unit": "эт."},
+        "N": {"title_ru": "Число этажей назначения", "unit": "эт."},
+        "C": {"title_ru": "Пассажиров в кабине", "unit": "пасс."},
+        "k": {"title_ru": "Номер этажа в сумме", "unit": "—"}
+      }
+    },
+    "motion_time": {
+      "title_ru": "Время движения по трапецеидальному/треугольному профилю",
+      "standard": "GENERAL_KINEMATICS",
+      "clause": null,
+      "expression": "tдв = f(d, v, a, b) = tразг + tуст + tторм",
+      "implementation": "src.engines.analytic_engine.travel_time",
+      "unit": "с",
+      "status": "general_physics",
+      "variables": {
+        "tдв": {"title_ru": "Полное время движения", "unit": "с"},
+        "d": {"title_ru": "Расстояние", "unit": "м"},
+        "v": {"title_ru": "Номинальная скорость", "unit": "м/с"},
+        "a": {"title_ru": "Ускорение", "unit": "м/с²"},
+        "b": {"title_ru": "Замедление", "unit": "м/с²"},
+        "tразг": {"title_ru": "Время разгона", "unit": "с"},
+        "tуст": {"title_ru": "Время установившегося движения", "unit": "с"},
+        "tторм": {"title_ru": "Время торможения", "unit": "с"}
+      }
+    },
+    "engineering_cycle_time": {
+      "title_ru": "Предварительное время цикла группы",
+      "standard": "ENGINEERING_PREVIEW",
+      "clause": null,
+      "expression": "Tцикл = 2 × tдв + S × tост + C × (tпос + tвыс)",
+      "implementation": "src.engines.analytic_engine.AnalyticEngine.calculate_preview",
+      "unit": "с",
+      "status": "engineering_preview",
+      "variables": {
+        "Tцикл": {"title_ru": "Предварительное время цикла группы", "unit": "с"},
+        "tдв": {"title_ru": "Время движения", "unit": "с"},
+        "S": {"title_ru": "Ожидаемое число остановок", "unit": "ост."},
+        "tост": {"title_ru": "Время одной остановки", "unit": "с"},
+        "C": {"title_ru": "Пассажиров в кабине", "unit": "пасс."},
+        "tпос": {"title_ru": "Время посадки одного пассажира", "unit": "с/пасс."},
+        "tвыс": {"title_ru": "Время высадки одного пассажира", "unit": "с/пасс."}
+      }
+    },
+    "interval": {
+      "title_ru": "Предварительный интервал",
+      "standard": "ENGINEERING_PREVIEW",
+      "clause": null,
+      "expression": "I = Tцикл / L",
+      "implementation": "src.engines.analytic_engine.AnalyticEngine.calculate_preview",
+      "unit": "с",
+      "status": "engineering_preview",
+      "variables": {
+        "I": {"title_ru": "Предварительный интервал", "unit": "с"},
+        "Tцикл": {"title_ru": "Время цикла", "unit": "с"},
+        "L": {"title_ru": "Количество лифтов", "unit": "шт."}
+      }
+    },
+    "handling_capacity_5min": {
+      "title_ru": "Предварительная провозная способность за 5 минут",
+      "standard": "ENGINEERING_PREVIEW",
+      "clause": null,
+      "expression": "HC5 = 300 × C / I",
+      "implementation": "src.engines.analytic_engine.AnalyticEngine.calculate_preview",
+      "unit": "пасс./5 мин",
+      "status": "engineering_preview",
+      "variables": {
+        "HC5": {"title_ru": "Провозная способность за 5 минут", "unit": "пасс./5 мин"},
+        "C": {"title_ru": "Расчётная вместимость", "unit": "пасс."},
+        "I": {"title_ru": "Интервал", "unit": "с"}
+      }
+    },
+    "average_wait_proxy": {
+      "title_ru": "Ориентировочное время ожидания, не менее",
+      "standard": "ENGINEERING_PREVIEW",
+      "clause": null,
+      "expression": "tож,ор ≈ I / 2",
+      "implementation": "src.engines.analytic_engine.AnalyticEngine.calculate_preview",
+      "unit": "с",
+      "status": "engineering_preview",
+      "variables": {
+        "tож,ор": {"title_ru": "Ориентировочное время ожидания", "unit": "с"},
+        "I": {"title_ru": "Интервал", "unit": "с"}
+      }
+    },
+    "gost_nominal_speed": {
+      "title_ru": "Расчётная номинальная скорость",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "п. 6.5.2, формула (1), таблица 4",
+      "expression": "vн = Hmax / tн",
+      "implementation": "src.engines.analytic_engine.nominal_speed_for_travel_time",
+      "unit": "м/с",
+      "status": "normative_implemented",
+      "variables": {
+        "vн": {"title_ru": "Расчётная номинальная скорость", "unit": "м/с"},
+        "Hmax": {"title_ru": "Высота подъёма", "unit": "м"},
+        "tн": {"title_ru": "Нормативное время движения на всю высоту", "unit": "с"}
+      }
+    },
+    "gost_nominal_capacity": {
+      "title_ru": "Номинальная вместимость по грузоподъёмности",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "п. 6.5.3; приложение Г",
+      "expression": "Pном = окр₀,₅↑(Q / 75)",
+      "implementation": "src.engines.analytic_engine.nominal_passengers_from_capacity",
+      "unit": "пасс.",
+      "status": "normative_implemented",
+      "variables": {
+        "Pном": {"title_ru": "Номинальная вместимость по грузоподъёмности", "unit": "пасс."},
+        "Q": {"title_ru": "Номинальная грузоподъёмность", "unit": "кг"}
+      }
+    },
+    "gost_calculated_car_capacity": {
+      "title_ru": "Расчётная вместимость кабины",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "п. 6.5.3; принятое правило округления по примерам приложения Е",
+      "expression": "Pк = окр₀,₅↑(Pном × kз)",
+      "implementation": "src.engines.analytic_engine.calculated_capacity",
+      "unit": "пасс.",
+      "status": "normative_interpretation",
+      "variables": {
+        "Pк": {"title_ru": "Расчётная вместимость кабины", "unit": "пасс."},
+        "Pном": {"title_ru": "Номинальная вместимость кабины", "unit": "пасс."},
+        "kз": {"title_ru": "Коэффициент заполнения кабины", "unit": "д.е."}
+      }
+    },
+    "gost_passenger_transfer_time": {
+      "title_ru": "Время входа или выхода пассажира",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "п. 6.4, таблица 3",
+      "expression": "tв = табл. 3(bдвери)",
+      "implementation": "src.engines.analytic_engine.passenger_transfer_time",
+      "unit": "с/пасс.",
+      "status": "normative_implemented",
+      "variables": {
+        "tв": {"title_ru": "Время входа или выхода одного пассажира", "unit": "с/пасс."},
+        "bдвери": {"title_ru": "Ширина дверного проёма", "unit": "мм"}
+      }
+    },
+    "gost_probable_stops": {
+      "title_ru": "Вероятное число остановок",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "раздел 7, формула (10)",
+      "expression": "S = Nэт × [1 − (1 − 1/Nэт)^Pк]",
+      "implementation": "src.engines.analytic_engine.probable_stops_uniform",
+      "unit": "ост.",
+      "status": "normative_implemented",
+      "variables": {
+        "S": {"title_ru": "Вероятное число остановок", "unit": "ост."},
+        "Nэт": {"title_ru": "Количество этажей назначения", "unit": "эт."},
+        "Pк": {"title_ru": "Среднее количество пассажиров в кабине", "unit": "пасс."}
+      }
+    },
+    "gost_reversal_floor": {
+      "title_ru": "Этаж реверса",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "раздел 7, формула (11)",
+      "expression": "Nр = Nэт − Σ(i/Nэт)^Pк, i=1..Nэт−1",
+      "implementation": "src.engines.analytic_engine.expected_highest_reversal",
+      "unit": "эт.",
+      "status": "normative_implemented",
+      "variables": {
+        "Nр": {"title_ru": "Расчётный этаж реверса", "unit": "эт."},
+        "Nэт": {"title_ru": "Количество этажей назначения", "unit": "эт."},
+        "Pк": {"title_ru": "Среднее количество пассажиров в кабине", "unit": "пасс."},
+        "i": {"title_ru": "Номер этажа в сумме", "unit": "—"}
+      }
+    },
+    "gost_adjacent_floor_time": {
+      "title_ru": "Время движения между соседними этажами на номинальной скорости",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "раздел 7, формула (8)",
+      "expression": "tэт.н = hэт / vн",
+      "implementation": "src.engines.analytic_engine.adjacent_floor_nominal_time",
+      "unit": "с",
+      "status": "normative_implemented",
+      "variables": {
+        "tэт.н": {"title_ru": "Время между соседними этажами на номинальной скорости", "unit": "с"},
+        "hэт": {"title_ru": "Высота этажа", "unit": "м"},
+        "vн": {"title_ru": "Номинальная скорость", "unit": "м/с"}
+      }
+    },
+    "gost_adjacent_floor_profile_time": {
+      "title_ru": "Межэтажное время движения с разгоном и торможением",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "п. 3.10; параметр tэт формулы (9); принятая кинематическая интерпретация",
+      "expression": "tэт = f_S(hэт, vн, a, b, j) = tразг + tуст + tторм",
+      "implementation": "src.engines.analytic_engine.jerk_limited_travel_time",
+      "unit": "с",
+      "status": "normative_interpretation",
+      "variables": {
+        "tэт": {"title_ru": "Полное межэтажное время движения", "unit": "с"},
+        "hэт": {"title_ru": "Высота межэтажного пролёта", "unit": "м"},
+        "vн": {"title_ru": "Номинальная скорость", "unit": "м/с"},
+        "a": {"title_ru": "Ускорение", "unit": "м/с²"},
+        "b": {"title_ru": "Замедление", "unit": "м/с²"},
+        "j": {"title_ru": "Рывок", "unit": "м/с³"},
+        "tразг": {"title_ru": "Время разгона по S-образному профилю", "unit": "с"},
+        "tуст": {"title_ru": "Время установившегося движения", "unit": "с"},
+        "tторм": {"title_ru": "Время торможения по S-образному профилю", "unit": "с"}
+      }
+    },
+    "kinematic_acceleration_distance": {
+      "title_ru": "Проверка достижения номинальной скорости",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "п. 3.10; принятая кинематическая интерпретация S-образного профиля",
+      "expression": "sвм = vм²/(2a) + a·vм/(2j); номинальная скорость достигается при 2sвм ≤ dф",
+      "implementation": "src.engines.analytic_engine.jerk_limited_transition_distance",
+      "unit": "м",
+      "status": "normative_interpretation",
+      "variables": {
+        "sвм": {"title_ru": "Путь разгона от нуля до проверяемой скорости", "unit": "м"},
+        "vм": {"title_ru": "Проверяемая скорость; здесь номинальная скорость лифта", "unit": "м/с"},
+        "a": {"title_ru": "Ускорение", "unit": "м/с²"},
+        "j": {"title_ru": "Рывок", "unit": "м/с³"},
+        "dф": {"title_ru": "Расстояние между соседними этажами", "unit": "м"}
+      }
+    },
+    "kinematic_maximum_speed": {
+      "title_ru": "Максимальная скорость на межэтажном пролёте",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "п. 3.10; принятая кинематическая интерпретация симметричного S-образного профиля",
+      "expression": "vм = −a²/(2j) + √(a·dф + (a²/(2j))²)",
+      "implementation": "src.engines.analytic_engine.jerk_limited_peak_speed",
+      "unit": "м/с",
+      "status": "normative_interpretation",
+      "variables": {
+        "vм": {"title_ru": "Максимальная достижимая скорость", "unit": "м/с"},
+        "a": {"title_ru": "Ускорение и равное ему по модулю замедление", "unit": "м/с²"},
+        "j": {"title_ru": "Рывок", "unit": "м/с³"},
+        "dф": {"title_ru": "Расстояние между соседними этажами", "unit": "м"}
+      }
+    },
+    "gost_stop_time": {
+      "title_ru": "Время, затрачиваемое на остановку",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "раздел 7, формула (9)",
+      "expression": "tост = tз + tз.д + tэт − tпр + tо + tз.з − tэт.н",
+      "implementation": "src.engines.analytic_engine.normative_stop_time",
+      "unit": "с",
+      "status": "normative_implemented",
+      "variables": {
+        "tост": {"title_ru": "Время, затрачиваемое на остановку", "unit": "с"},
+        "tз": {"title_ru": "Время закрывания двери", "unit": "с"},
+        "tз.д": {"title_ru": "Задержка начала движения", "unit": "с"},
+        "tэт": {"title_ru": "Время межэтажного перемещения с разгоном и торможением", "unit": "с"},
+        "tпр": {"title_ru": "Время предварительного открывания двери", "unit": "с"},
+        "tо": {"title_ru": "Время открывания двери", "unit": "с"},
+        "tз.з": {"title_ru": "Время задержки закрывания двери", "unit": "с"},
+        "tэт.н": {"title_ru": "Время межэтажного движения на номинальной скорости", "unit": "с"}
+      }
+    },
+    "gost_round_trip_time": {
+      "title_ru": "Время кругового рейса",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "раздел 7, формула (7)",
+      "expression": "T = 2 × Nр × tэт.н + (S + 1) × tост + 2 × Pк × tв",
+      "implementation": "src.engines.analytic_engine.normative_round_trip_time",
+      "unit": "с",
+      "status": "normative_implemented",
+      "variables": {
+        "T": {"title_ru": "Время кругового рейса", "unit": "с"},
+        "Nр": {"title_ru": "Этаж реверса", "unit": "эт."},
+        "tэт.н": {"title_ru": "Время межэтажного движения на номинальной скорости", "unit": "с"},
+        "S": {"title_ru": "Вероятное число остановок", "unit": "ост."},
+        "tост": {"title_ru": "Время остановки", "unit": "с"},
+        "Pк": {"title_ru": "Среднее количество пассажиров в кабине", "unit": "пасс."},
+        "tв": {"title_ru": "Время входа или выхода пассажира", "unit": "с/пасс."}
+      }
+    },
+    "gost_interval": {
+      "title_ru": "Интервал движения лифтов",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "раздел 7, формула (5)",
+      "expression": "tи = T / Nл",
+      "implementation": "src.engines.analytic_engine.normative_interval",
+      "unit": "с",
+      "status": "normative_implemented",
+      "variables": {
+        "tи": {"title_ru": "Интервал движения лифтов", "unit": "с"},
+        "T": {"title_ru": "Время кругового рейса", "unit": "с"},
+        "Nл": {"title_ru": "Количество лифтов в группе", "unit": "шт."}
+      }
+    },
+    "gost_group_handling_capacity": {
+      "title_ru": "Провозная способность группы за 5 минут",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "раздел 7, формула (4)",
+      "expression": "P5 = 300 × Pк × Nл / T = 300 × Pк / tи",
+      "implementation": "src.engines.analytic_engine.group_handling_capacity",
+      "unit": "пасс./5 мин",
+      "status": "normative_implemented",
+      "variables": {
+        "P5": {"title_ru": "Провозная способность группы за 5 минут", "unit": "пасс./5 мин"},
+        "Pк": {"title_ru": "Среднее количество пассажиров в кабине", "unit": "пасс."},
+        "Nл": {"title_ru": "Количество лифтов", "unit": "шт."},
+        "T": {"title_ru": "Время кругового рейса", "unit": "с"},
+        "tи": {"title_ru": "Интервал движения", "unit": "с"}
+      }
+    },
+    "gost_handling_capacity_percent": {
+      "title_ru": "Провозная способность в процентах от заселённости",
+      "standard": "ГОСТ 34758-2021",
+      "clause": "раздел 7, формула (6)",
+      "expression": "%P5 = P5 × 100 / A",
+      "implementation": "src.engines.analytic_engine.handling_capacity_percent",
+      "unit": "% населения/5 мин",
+      "status": "normative_implemented",
+      "variables": {
+        "%P5": {"title_ru": "Провозная способность в процентах от заселённости", "unit": "% населения/5 мин"},
+        "P5": {"title_ru": "Провозная способность за 5 минут", "unit": "пасс./5 мин"},
+        "A": {"title_ru": "Заселённость обслуживаемой зоны", "unit": "чел."}
+      }
+    },
+    "parking_lower_reversal": {
+      "title_ru": "Расчётный нижний уровень паркинга",
+      "standard": "Инженерное расширение для учёта паркинга (не формула ГОСТ)",
+      "clause": "дополнение расчётной модели; проверить симуляцией",
+      "expression": "Hм = Σ[k=1..M] {1 − [1 − qм × (M − k + 1) / M]^Pк}",
+      "implementation": "src.engines.analytic_engine.expected_parking_lower_reversal",
+      "unit": "ур.",
+      "status": "engineering_extension",
+      "variables": {
+        "Hм": {"title_ru": "Расчётный нижний уровень паркинга", "unit": "ур."},
+        "M": {"title_ru": "Число подземных уровней", "unit": "ур."},
+        "Pк": {"title_ru": "Среднее количество пассажиров в кабине", "unit": "пасс."},
+        "qм": {"title_ru": "Доля входящего потока с паркинга", "unit": "доля"},
+        "k": {"title_ru": "Индекс подземного уровня от верхнего к нижнему", "unit": "—"}
+      }
+    },
+    "parking_expected_depth": {
+      "title_ru": "Ожидаемая глубина заезда на паркинг",
+      "standard": "Инженерное расширение для учёта паркинга (не формула ГОСТ)",
+      "clause": "дополнение расчётной модели; проверить симуляцией",
+      "expression": "Dм = Σ[k=1..M] Δhк × {1 − [1 − qм × (M − k + 1) / M]^Pк}",
+      "implementation": "src.engines.analytic_engine.expected_parking_depth",
+      "unit": "м",
+      "status": "engineering_extension",
+      "variables": {
+        "Dм": {"title_ru": "Ожидаемая глубина заезда на паркинг", "unit": "м"},
+        "Δhк": {"title_ru": "Приращение глубины k-го уровня", "unit": "м"},
+        "M": {"title_ru": "Число подземных уровней", "unit": "ур."},
+        "Pк": {"title_ru": "Среднее количество пассажиров в кабине", "unit": "пасс."},
+        "qм": {"title_ru": "Доля входящего потока с паркинга", "unit": "доля"},
+        "k": {"title_ru": "Индекс подземного уровня от верхнего к нижнему", "unit": "—"}
+      }
+    },
+    "parking_probable_stops": {
+      "title_ru": "Вероятное число остановок на паркинге",
+      "standard": "Инженерное расширение для учёта паркинга (не формула ГОСТ)",
+      "clause": "дополнение расчётной модели; проверить симуляцией",
+      "expression": "Sм = M × [1 − (1 − qм / M)^Pк]",
+      "implementation": "src.engines.analytic_engine.probable_parking_stops",
+      "unit": "ост.",
+      "status": "engineering_extension",
+      "variables": {
+        "Sм": {"title_ru": "Вероятное число остановок на паркинге", "unit": "ост."},
+        "M": {"title_ru": "Число подземных уровней", "unit": "ур."},
+        "Pк": {"title_ru": "Среднее количество пассажиров в кабине", "unit": "пасс."},
+        "qм": {"title_ru": "Доля входящего потока с паркинга", "unit": "доля"}
+      }
+    },
+    "parking_round_trip_extension": {
+      "title_ru": "Поправка кругового рейса на паркинг",
+      "standard": "Инженерное расширение для учёта паркинга (не формула ГОСТ)",
+      "clause": "дополнение расчётной модели; проверить симуляцией",
+      "expression": "Tм = TГОСТ + 2 × Dм / vн + Sм × tост.м",
+      "implementation": "src.engines.analytic_engine.AnalyticEngine.calculate_normative",
+      "unit": "с",
+      "status": "engineering_extension",
+      "variables": {
+        "Tм": {"title_ru": "Круговой рейс с учётом паркинга", "unit": "с"},
+        "TГОСТ": {"title_ru": "Круговой рейс по формулам ГОСТ без паркинга", "unit": "с"},
+        "Dм": {"title_ru": "Ожидаемая глубина заезда", "unit": "м"},
+        "vн": {"title_ru": "Номинальная скорость лифта", "unit": "м/с"},
+        "Sм": {"title_ru": "Вероятное число остановок на паркинге", "unit": "ост."},
+        "tост.м": {"title_ru": "Время одной остановки на паркинге", "unit": "с"}
+      }
+    }
+  }
+}

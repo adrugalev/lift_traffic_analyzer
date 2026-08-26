@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "building_types": {
+    "residential": {
+      "title_ru": "Жилое здание",
+      "occupancy_per_m2": null,
+      "source": null,
+      "status": "manual_population_required"
+    },
+    "office": {
+      "title_ru": "Офис",
+      "occupancy_per_m2": null,
+      "source": null,
+      "status": "manual_population_required"
+    },
+    "hotel": {
+      "title_ru": "Гостиница",
+      "occupancy_per_m2": null,
+      "source": null,
+      "status": "manual_population_required"
+    },
+    "mixed_use": {
+      "title_ru": "Многофункциональный комплекс",
+      "occupancy_per_m2": null,
+      "source": null,
+      "status": "manual_population_required"
+    },
+    "custom": {
+      "title_ru": "Пользовательский тип",
+      "occupancy_per_m2": null,
+      "source": null,
+      "status": "manual_population_required"
+    }
+  }
+}
+

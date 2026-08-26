@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "notice_ru": "Профили являются изменяемыми параметрами моделирования, а не нормативными значениями.",
+  "profiles": {
+    "up_peak": {"title_ru": "Утренний восходящий пик", "description_ru": "Основной поток идёт от входного этажа вверх. Используйте прежде всего для начала рабочего дня в офисном здании.", "incoming_share": 1.0, "outgoing_share": 0.0, "interfloor_share": 0.0},
+    "down_peak": {"title_ru": "Вечерний нисходящий пик", "description_ru": "Основной поток идёт с верхних этажей к выходу. Используйте прежде всего для окончания рабочего дня в офисном здании.", "incoming_share": 0.0, "outgoing_share": 1.0, "interfloor_share": 0.0},
+    "lunch": {"title_ru": "Обеденный поток", "description_ru": "Сочетает поездки к выходу, возврат в здание и перемещения между этажами в обеденное время.", "incoming_share": 0.35, "outgoing_share": 0.35, "interfloor_share": 0.30},
+    "mixed": {"title_ru": "Смешанный поток", "description_ru": "Подходит для периода без одного преобладающего направления, когда одновременно присутствуют все типы поездок.", "incoming_share": 0.40, "outgoing_share": 0.35, "interfloor_share": 0.25},
+    "bidirectional": {"title_ru": "Двунаправленный поток", "description_ru": "Входящий и исходящий потоки равны, а межэтажные поездки не учитываются.", "incoming_share": 0.50, "outgoing_share": 0.50, "interfloor_share": 0.0},
+    "hotel_morning": {"title_ru": "Гостиничный утренний поток", "description_ru": "Преобладают поездки гостей с жилых этажей вниз: к выходу, ресторану и зоне выезда.", "incoming_share": 0.20, "outgoing_share": 0.70, "interfloor_share": 0.10},
+    "hotel_evening": {"title_ru": "Гостиничный вечерний поток", "description_ru": "Преобладают прибытия гостей и поездки от вестибюля к номерам.", "incoming_share": 0.70, "outgoing_share": 0.20, "interfloor_share": 0.10},
+    "residential_morning": {"title_ru": "Жилой утренний поток", "description_ru": "Жители в основном спускаются с жилых этажей к выходу; подходит для утреннего выезда из дома.", "incoming_share": 0.10, "outgoing_share": 0.80, "interfloor_share": 0.10},
+    "residential_evening": {"title_ru": "Жилой вечерний поток", "description_ru": "Жители в основном возвращаются и едут от входного этажа вверх к квартирам.", "incoming_share": 0.80, "outgoing_share": 0.10, "interfloor_share": 0.10},
+    "custom": {"title_ru": "Пользовательский сценарий", "description_ru": "Используйте, когда известны собственные доли направлений и типовой профиль не подходит.", "incoming_share": 0.40, "outgoing_share": 0.40, "interfloor_share": 0.20}
+  }
+}

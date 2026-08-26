@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "configuration_version": "gost-34758-2021-r2-2026-07-28",
+  "status": "gost_implemented",
+  "standards": {
+    "GOST_34758_2021": {
+      "title": "ГОСТ 34758-2021",
+      "implemented": true,
+      "assessment_enabled": true,
+      "verified": true,
+      "source": {
+        "official_card": "https://protect.gost.ru/gost/details/2eaa252c-8da5-4fa6-b7eb-97b0a0cecd0f",
+        "correction": "ИУС 9-2023, введена 11.09.2023",
+        "implementation_scope": "Разделы 5-7, таблицы 1, 3, 4, формулы (1)-(11), приложение Г и пример приложения Д",
+        "audit_note": "Формулы и критерии сверены с открытой публикацией текста; перед договорным применением рекомендуется контроль по экземпляру пользователя."
+      },
+      "criteria": {
+        "Офис": {
+          "traffic_percent_5min_min": 12.0,
+          "interval_s_max": 30.0,
+          "full_height_time_s_min": 20.0,
+          "full_height_time_s_max": 30.0,
+          "clause": "п. 5.4.1, таблица 1; п. 6.5.2, таблица 4"
+        },
+        "Гостиница": {
+          "traffic_percent_5min_min": 12.0,
+          "interval_s_max": 40.0,
+          "full_height_time_s_min": 25.0,
+          "full_height_time_s_max": 35.0,
+          "clause": "п. 5.4.1, таблица 1; п. 6.5.2, таблица 4"
+        },
+        "Жилое здание": {
+          "traffic_percent_5min_min": 6.0,
+          "interval_s_max": 60.0,
+          "full_height_time_s_min": 25.0,
+          "full_height_time_s_max": 45.0,
+          "clause": "п. 5.4.1, таблица 1; п. 6.5.2, таблица 4"
+        }
+      },
+      "passenger_transfer_time_s": {
+        "800": 1.2,
+        "900": 1.1,
+        "1000": 1.0,
+        "1100": 1.0,
+        "1200": 0.9,
+        "clause": "п. 6.4, таблица 3"
+      },
+      "default_load_factor": {
+        "value": 0.8,
+        "clause": "п. 6.5.3",
+        "note": "Обычно применяемое значение; при дробной части 0,5 Pк округляется вверх."
+      },
+      "calculation_interpretation": {
+        "car_capacity_rounding": "Pк = окр₀,₅↑(Pном × kз), до целого пассажира",
+        "adjacent_floor_flight": "Идеальный S-образный профиль с учётом ускорения, замедления и рывка; при коротком пролёте номинальная скорость может не достигаться.",
+        "audit_note": "Правила фиксируются в трассировке формул и версии нормативной конфигурации."
+      }
+    }
+  },
+  "instructions_ru": [
+    "Расчётный режим ограничен областью применимости метода ГОСТ: восходящий пик, один нижний посадочный этаж, равномерные этажи и однородная группа.",
+    "Для договорного отчёта требуется предметная проверка инженером и контроль по экземпляру стандарта пользователя."
+  ]
+}
