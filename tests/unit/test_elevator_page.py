@@ -33,6 +33,9 @@ def test_page_saves_all_lifts_as_one_implicit_group(monkeypatch) -> None:
     assert [item.value for item in app.title] == ["3. Лифты"]
     assert "Добавить группу" not in [item.label for item in app.button]
     assert "Редактируемая группа" not in [item.label for item in app.selectbox]
+    markdown_values = [item.value for item in app.markdown]
+    assert "**Основные характеристики и движение**" in markdown_values
+    assert "**Двери и пассажирообмен**" in markdown_values
 
     next(item for item in app.button if item.label == "Сохранить лифты").click()
     app.run(timeout=20)

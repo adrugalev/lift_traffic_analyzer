@@ -115,19 +115,10 @@ display_frame = editor_frame.copy()
 for decimal_column in ELEVATOR_DECIMAL_COLUMNS:
     display_frame[decimal_column] = display_frame[decimal_column].map(format_decimal)
 
-edited = st.data_editor(
-    display_frame,
-    key=f"elevators_editor_{editor_revision}",
-    num_rows="fixed",
-    width="stretch",
-    height="auto",
-    row_height=26,
-    hide_index=True,
-    disabled=["Остановки"],
-    column_config={
+column_config = {
         "Наименование": st.column_config.TextColumn(
             "Лифт",
-            width=95,
+            width=90,
             help="Наименование лифта",
         ),
         "Г/п, кг": st.column_config.TextColumn(
@@ -181,53 +172,53 @@ edited = st.data_editor(
         ),
         "Дверь, м": st.column_config.TextColumn(
             "Дверь, м",
-            width=74,
+            width=64,
             help="Ширина дверного проёма. Допустимы запятая и точка.",
         ),
         "Тип дверей": st.column_config.SelectboxColumn(
             "Тип дверей",
-            width=115,
+            width=105,
             options=[item.value for item in DoorOpeningType],
             help="Конструктивный тип открывания дверей кабины.",
         ),
         "Открытие, с": st.column_config.TextColumn(
             "Откр., с",
-            width=72,
+            width=62,
             help="Время открывания дверей. Допустимы запятая и точка.",
         ),
         "Закрытие, с": st.column_config.TextColumn(
             "Закр., с",
-            width=72,
+            width=62,
             help="Время закрывания дверей. Допустимы запятая и точка.",
         ),
         "Предв. открытие, с": st.column_config.TextColumn(
             "Пред. откр., с",
-            width=88,
+            width=72,
             help="Время предварительного открывания дверей. Допустимы запятая и точка.",
         ),
         "Задержка, с": st.column_config.TextColumn(
             "Стоянка, с",
-            width=80,
+            width=68,
             help="Время стоянки с открытыми дверями. Допустимы запятая и точка.",
         ),
         "Задержка пуска, с": st.column_config.TextColumn(
             "Пуск, с",
-            width=70,
+            width=58,
             help="Поправка на пуск и торможение. Допустимы запятая и точка.",
         ),
         "Посадка, с/пасс.": st.column_config.TextColumn(
             "Посадка, с",
-            width=84,
+            width=68,
             help="Время посадки одного пассажира. Допустимы запятая и точка.",
         ),
         "Высадка, с/пасс.": st.column_config.TextColumn(
             "Высадка, с",
-            width=84,
+            width=68,
             help="Время высадки одного пассажира. Допустимы запятая и точка.",
         ),
         "Остановки": st.column_config.NumberColumn(
             "Ост.",
-            width=55,
+            width=50,
             help=(
                 "Число обслуживаемых остановок лифта. Должно совпадать с количеством "
                 "этажей, выбранных для группы."
@@ -243,8 +234,64 @@ edited = st.data_editor(
                 "в модели и отчёте, но не изменяет текущие формулы пассажиропотока."
             ),
         ),
-    },
+    }
+
+main_columns = [
+    "Наименование",
+    "Г/п, кг",
+    "Номинал, пасс.",
+    "Заполнение, %",
+    "Скорость, м/с",
+    "Ускорение, м/с²",
+    "Замедление, м/с²",
+    "Рывок, м/с³",
+    "МГН",
+]
+door_columns = [
+    "Наименование",
+    "Дверь, м",
+    "Тип дверей",
+    "Открытие, с",
+    "Закрытие, с",
+    "Предв. открытие, с",
+    "Задержка, с",
+    "Задержка пуска, с",
+    "Посадка, с/пасс.",
+    "Высадка, с/пасс.",
+    "Остановки",
+]
+
+st.markdown("**Основные характеристики и движение**")
+edited_main = st.data_editor(
+    display_frame[main_columns],
+    key=f"elevators_main_editor_{editor_revision}",
+    num_rows="fixed",
+    width="stretch",
+    height="auto",
+    row_height=26,
+    hide_index=True,
+    column_config={column: column_config[column] for column in main_columns},
 )
+
+st.markdown("**Двери и пассажирообмен**")
+edited_doors = st.data_editor(
+    display_frame[door_columns],
+    key=f"elevators_doors_editor_{editor_revision}",
+    num_rows="fixed",
+    width="stretch",
+    height="auto",
+    row_height=26,
+    hide_index=True,
+    disabled=["Наименование", "Остановки"],
+    column_config={column: column_config[column] for column in door_columns},
+)
+
+edited = display_frame.copy()
+for column in main_columns:
+    edited[column] = edited_main[column].to_numpy()
+for column in door_columns:
+    if column != "Наименование":
+        edited[column] = edited_doors[column].to_numpy()
 try:
     normalized_edited = normalize_elevator_editor_frame(
         edited, existing_elevators, stops_count

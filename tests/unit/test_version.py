@@ -32,15 +32,12 @@ def test_version_history_starts_with_current_release_and_stays_brief() -> None:
     assert all(1 <= len(item["changes_ru"]) <= 80 for item in versions)
 
 
-def test_about_page_opens_version_history_from_version_number() -> None:
+def test_sidebar_opens_version_history_from_version_number() -> None:
     project_root = Path(__file__).resolve().parents[2]
-    page_text = (project_root / "pages" / "10_settings.py").read_text(
+    ui_text = (project_root / "src" / "ui.py").read_text(
         encoding="utf-8"
     )
 
-    assert '@st.dialog("История версий", width="large")' in page_text
-    assert 'key="show_version_history"' in page_text
-    assert "show_version_history(" in page_text
-    assert 'key="version_metric_card"' in page_text
-    assert "background: #f4f7f9" in page_text
-    assert "border: 1px solid #d5e0e5" in page_text
+    assert '@st.dialog("История версий", width="large")' in ui_text
+    assert 'key="show_version_history_sidebar"' in ui_text
+    assert "show_version_history()" in ui_text

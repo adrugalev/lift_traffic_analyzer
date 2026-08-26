@@ -8,10 +8,12 @@ from typing import Any
 
 import streamlit as st
 
-from src import APP_NAME, APP_SUBTITLE
+from src import APP_NAME, APP_SUBTITLE, VERSION_DATE, VERSION_NUMBER
 from src.models.project import Project
 from src.models.results import DiagnosticMessage, MessageSeverity
+from src.services.configuration_service import ConfigurationService
 from src.services.project_service import ProjectService
+from src.standard_document import GOST_DOCUMENT_FILENAME, gost_document_bytes
 
 
 NAVIGATION = (
@@ -22,8 +24,7 @@ NAVIGATION = (
     ("pages/05_analytic_calculation.py", "5. Расчёт и отчёт"),
     ("pages/06_simulation.py", "6. Симуляция"),
     ("pages/07_comparison.py", "7. Сравнение вариантов"),
-    ("pages/09_reference_data.py", "8. Справочники и формулы"),
-    ("pages/10_settings.py", "9. О программе"),
+    ("pages/09_reference_data.py", "Справочники и формулы"),
 )
 
 ADDITIONAL_NAVIGATION = {
@@ -42,6 +43,35 @@ GENERATED_REPORT_KEYS = (
 DEMO_CLICK_THRESHOLD = 4
 
 
+@st.dialog("История версий", width="large")
+def show_version_history() -> None:
+    """Показывает компактную историю изменений приложения."""
+
+    version_history = ConfigurationService().version_history()
+    rows = [
+        {
+            "Версия": item["version"],
+            "Дата": item["date"],
+            "Изменения": item["changes_ru"],
+        }
+        for item in version_history["versions"]
+    ]
+    st.dataframe(
+        rows,
+        hide_index=True,
+        width="stretch",
+        height="auto",
+        column_config={
+            "Версия": st.column_config.TextColumn(width="small"),
+            "Дата": st.column_config.TextColumn(width="small"),
+            "Изменения": st.column_config.TextColumn(width="large"),
+        },
+    )
+    st.caption(
+        f"История ведётся с версии {version_history['history_starts_with']}."
+    )
+
+
 def invalidate_generated_reports() -> None:
     """Удаляет отчёты, которые могли устареть после изменения исходных данных."""
 
@@ -50,13 +80,13 @@ def invalidate_generated_reports() -> None:
 
 
 def handle_demo_project_trigger(clicked: bool) -> bool:
-    """Загружает очередной демо-проект после четырёх кликов по заголовку меню."""
+    """Загружает очередной демо-проект после четырёх кликов по подзаголовку."""
 
     if not clicked:
         return False
-    click_count = int(st.session_state.get("sections_demo_click_count", 0)) + 1
+    click_count = int(st.session_state.get("subtitle_demo_click_count", 0)) + 1
     if click_count < DEMO_CLICK_THRESHOLD:
-        st.session_state.sections_demo_click_count = click_count
+        st.session_state.subtitle_demo_click_count = click_count
         return False
 
     project_queue = list(st.session_state.get("test_project_queue", []))
@@ -77,7 +107,7 @@ def handle_demo_project_trigger(clicked: bool) -> bool:
     update_project(test_project)
     st.session_state.test_project_queue = project_queue
     st.session_state.last_test_project_key = project_key
-    st.session_state.sections_demo_click_count = 0
+    st.session_state.subtitle_demo_click_count = 0
     st.session_state.demo_project_loaded_notice = (
         f"Загружен проект «{test_project.metadata.name}»: "
         f"{len(test_project.floors)} этажей, {test_project.population} человек, "
@@ -94,18 +124,24 @@ def render_navigation() -> None:
             f"""
             <div class="sidebar-app-brand">
                 <div class="sidebar-app-name">{APP_NAME}</div>
-                <div class="sidebar-app-subtitle">{APP_SUBTITLE}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
         demo_clicked = st.button(
-            "РАЗДЕЛЫ",
-            key="sections_demo_trigger",
+            APP_SUBTITLE,
+            key="subtitle_demo_trigger",
             type="tertiary",
         )
         if handle_demo_project_trigger(demo_clicked):
             st.rerun()
+        if st.button(
+            f"Версия {VERSION_NUMBER} от {VERSION_DATE}",
+            key="show_version_history_sidebar",
+            type="tertiary",
+            help="Нажмите, чтобы открыть краткую историю версий.",
+        ):
+            show_version_history()
         if notice := st.session_state.pop("demo_project_loaded_notice", None):
             st.success(notice)
         for page, label in NAVIGATION[:5]:
@@ -119,8 +155,28 @@ def render_navigation() -> None:
             for page, label in NAVIGATION:
                 if page in ADDITIONAL_NAVIGATION:
                     st.page_link(page, label=label, use_container_width=True)
+        st.markdown(
+            '<div class="sidebar-additional-label">ДОПОЛНИТЕЛЬНО</div>',
+            unsafe_allow_html=True,
+        )
         for page, label in NAVIGATION[7:]:
-            st.page_link(page, label=label, use_container_width=True)
+            st.page_link(
+                page,
+                label=label,
+                icon=":material/library_books:",
+                use_container_width=True,
+            )
+        st.download_button(
+            "Скачать ГОСТ 34758-2021 (PDF)",
+            data=gost_document_bytes(),
+            file_name=GOST_DOCUMENT_FILENAME,
+            mime="application/pdf",
+            key="gost_sidebar_download",
+            icon=":material/download:",
+            type="tertiary",
+            width="stretch",
+            help="Скачать используемый в расчётах нормативный документ.",
+        )
 
 
 def configure_page(title: str, icon: str = "↕️") -> None:
@@ -137,7 +193,7 @@ def configure_page(title: str, icon: str = "↕️") -> None:
         <style>
         .block-container {max-width: 1420px; padding-top: 1.4rem;}
         .sidebar-app-brand {
-            margin: 0.1rem 0 1.15rem;
+            margin: 0.1rem 0 0.2rem;
         }
         .sidebar-app-name {
             color: #31333f;
@@ -145,30 +201,71 @@ def configure_page(title: str, icon: str = "↕️") -> None:
             font-weight: 650;
             line-height: 1.25;
         }
-        .sidebar-app-subtitle {
-            margin-top: 0.35rem;
-            color: rgba(49, 51, 63, 0.58);
-            font-size: 0.78rem;
-            font-weight: 400;
-            line-height: 1.35;
-        }
         [data-testid="stMetric"] {
             background: #f4f7f9; border: 1px solid #d5e0e5;
             padding: 0.8rem; border-radius: 0.65rem;
         }
-        .st-key-sections_demo_trigger button,
-        .st-key-sections_demo_trigger button:hover,
-        .st-key-sections_demo_trigger button:focus,
-        .st-key-sections_demo_trigger button:active {
+        .st-key-subtitle_demo_trigger {
+            margin-bottom: 0.25rem;
+        }
+        .st-key-subtitle_demo_trigger button,
+        .st-key-subtitle_demo_trigger button:hover,
+        .st-key-subtitle_demo_trigger button:focus,
+        .st-key-subtitle_demo_trigger button:active {
             min-height: auto !important; height: auto !important;
             padding: 0 !important; border: 0 !important;
             background: transparent !important; box-shadow: none !important;
             color: rgba(49, 51, 63, 0.55) !important;
             cursor: default !important; outline: none !important;
         }
-        .st-key-sections_demo_trigger button p {
-            color: inherit !important; font-size: 0.875rem !important;
-            font-weight: 400 !important; letter-spacing: 0.02em !important;
+        .st-key-subtitle_demo_trigger button p {
+            color: inherit !important; font-size: 0.78rem !important;
+            font-weight: 400 !important; line-height: 1.35 !important;
+        }
+        .st-key-show_version_history_sidebar {
+            margin: 0 0 1.15rem;
+        }
+        .st-key-show_version_history_sidebar button,
+        .st-key-show_version_history_sidebar button:hover,
+        .st-key-show_version_history_sidebar button:focus {
+            min-height: auto !important; height: auto !important;
+            padding: 0 !important; border: 0 !important;
+            background: transparent !important; box-shadow: none !important;
+            color: rgba(49, 51, 63, 0.55) !important;
+        }
+        .st-key-show_version_history_sidebar button p {
+            color: inherit !important; font-size: 0.78rem !important;
+            font-weight: 400 !important;
+        }
+        .sidebar-additional-label {
+            margin: 0.9rem 0 0.25rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid rgba(49, 51, 63, 0.12);
+            color: rgba(49, 51, 63, 0.48);
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+        }
+        .st-key-gost_sidebar_download {
+            margin-top: 0.15rem;
+        }
+        .st-key-gost_sidebar_download button,
+        .st-key-gost_sidebar_download button:hover,
+        .st-key-gost_sidebar_download button:focus {
+            min-height: 28px !important;
+            height: 28px !important;
+            padding: 0 8px !important;
+            border: 0 !important;
+            border-radius: 8px !important;
+            background: rgba(151, 166, 195, 0.15) !important;
+            box-shadow: none !important;
+            justify-content: flex-start !important;
+            color: #31333f !important;
+        }
+        .st-key-gost_sidebar_download button p {
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            line-height: 28px !important;
         }
         </style>
         """,

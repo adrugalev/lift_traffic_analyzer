@@ -118,8 +118,11 @@ def test_reference_page_hides_internal_configurations() -> None:
     assert "st.json" not in page_text
     assert "Каталог лифтов" not in page_text
     assert "Реализация в коде" not in page_text
-    assert "8. Справочники и формулы" in page_text
+    assert 'st.title("Справочники и формулы")' in page_text
     assert "height=PROFILE_CARD_HEIGHT" in page_text
     assert "height=ARRIVAL_MODEL_CARD_HEIGHT" in page_text
     assert 'class="formula-symbol-table"' in page_text
     assert "formula_symbol_html(symbol)" in page_text
+    assert '"Скачать ГОСТ"' not in page_text
+    assert "download_button" not in page_text
+    assert "Официальная карточка ГОСТ 34758-2021 в Росстандарте" in page_text

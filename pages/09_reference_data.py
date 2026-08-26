@@ -18,7 +18,6 @@ from src.reference_guide import (
     formula_symbol_html,
 )
 from src.services.configuration_service import ConfigurationService
-from src.standard_document import GOST_DOCUMENT_FILENAME, gost_document_bytes
 from src.ui import configure_page, ensure_session
 
 
@@ -173,7 +172,7 @@ def _profile_card(profile: dict[str, object], example: str) -> None:
 
 configure_page("Справочники и формулы")
 ensure_session()
-st.title("8. Справочники и формулы")
+st.title("Справочники и формулы")
 st.markdown(FORMULA_TABLE_STYLES, unsafe_allow_html=True)
 
 configuration = ConfigurationService()
@@ -272,25 +271,10 @@ with criteria_tab:
         "пассажиропотоков в жилых зданиях, гостиницах и офисных зданиях». "
         "Ниже приведены применяемые в расчёте критерии и точные ссылки на стандарт."
     )
-    with st.container(
-        key="gost_source_links",
-        horizontal=True,
-        vertical_alignment="center",
-        gap="small",
-    ):
-        st.markdown(
-            "[Официальная карточка ГОСТ 34758-2021 в Росстандарте]"
-            f"({normative['source']['official_card']}) &#45;&#45;",
-            unsafe_allow_html=True,
-        )
-        st.download_button(
-            "скачать ГОСТ",
-            data=gost_document_bytes(),
-            file_name=GOST_DOCUMENT_FILENAME,
-            mime="application/pdf",
-            help="Скачать используемый в расчётах ГОСТ 34758-2021 в формате PDF.",
-        )
-
+    st.markdown(
+        "[Официальная карточка ГОСТ 34758-2021 в Росстандарте]"
+        f"({normative['source']['official_card']})"
+    )
     st.header("Критерии для оценки лифтовой группы")
     criteria_rows = []
     for building_name, criterion in normative["criteria"].items():
@@ -320,6 +304,7 @@ with criteria_tab:
             "Привязка к ГОСТ": st.column_config.TextColumn(width="large"),
         },
     )
+
     st.caption(
         "Пассажиропоток за пять минут приведён в таблице 1 (п. 5.4.1), "
         "рекомендуемые интервал и время движения — в таблице 4 (п. 6.5.2). "

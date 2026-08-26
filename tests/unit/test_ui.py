@@ -33,11 +33,18 @@ class _NavigationStreamlit:
         self.links: list[str] = []
         self.session_state = _SessionState()
         self.markdown_values: list[str] = []
+        self.button_labels: list[str] = []
+        self.download_labels: list[str] = []
 
     def markdown(self, value: str, **_kwargs) -> None:
         self.markdown_values.append(value)
 
-    def button(self, _label: str, **_kwargs) -> bool:
+    def button(self, label: str, **_kwargs) -> bool:
+        self.button_labels.append(label)
+        return False
+
+    def download_button(self, label: str, **_kwargs) -> bool:
+        self.download_labels.append(label)
         return False
 
     def success(self, _text: str) -> None:
@@ -102,9 +109,25 @@ def test_additional_navigation_is_hidden_by_default(monkeypatch) -> None:
     assert "pages/09_reference_data.py" in streamlit.links
     assert "app.py" not in streamlit.links
     assert ui.NAVIGATION[0] == ("pages/01_project.py", "1. Проект")
+    assert ui.NAVIGATION[-1] == (
+        "pages/09_reference_data.py",
+        "Справочники и формулы",
+    )
+    assert not any(page == "pages/10_settings.py" for page, _label in ui.NAVIGATION)
     branding = "\n".join(streamlit.markdown_values)
-    assert "Расчёт пассажиропотока EPSS" in branding
-    assert "Расчёт по ГОСТ и симуляция пассажиропотока" in branding
+    assert "Расчёт пассажиропотока" in branding
+    assert "EPSS" not in branding
+    assert "РАЗДЕЛЫ" not in streamlit.button_labels
+    assert "Расчёт по ГОСТ и симуляция пассажиропотока" in streamlit.button_labels
+    assert (
+        f"Версия {ui.VERSION_NUMBER} от {ui.VERSION_DATE}"
+        in streamlit.button_labels
+    )
+    assert streamlit.button_labels.index(ui.APP_SUBTITLE) < streamlit.button_labels.index(
+        f"Версия {ui.VERSION_NUMBER} от {ui.VERSION_DATE}"
+    )
+    assert "ДОПОЛНИТЕЛЬНО" in branding
+    assert streamlit.download_labels == ["Скачать ГОСТ 34758-2021 (PDF)"]
 
 
 def test_additional_navigation_is_shown_by_checkbox(monkeypatch) -> None:
@@ -116,7 +139,7 @@ def test_additional_navigation_is_shown_by_checkbox(monkeypatch) -> None:
     assert ui.ADDITIONAL_NAVIGATION <= set(streamlit.links)
 
 
-def test_four_section_heading_clicks_load_demo_project(monkeypatch) -> None:
+def test_four_subtitle_clicks_load_demo_project(monkeypatch) -> None:
     state = _SessionState(
         project=ProjectService.create_application_default(),
         analytic_result=None,
@@ -130,6 +153,6 @@ def test_four_section_heading_clicks_load_demo_project(monkeypatch) -> None:
     assert ui.handle_demo_project_trigger(True) is False
     assert ui.handle_demo_project_trigger(True) is True
 
-    assert state.sections_demo_click_count == 0
+    assert state.subtitle_demo_click_count == 0
     assert state.project.metadata.name != "Новый проект"
     assert state.demo_project_loaded_notice.startswith("Загружен проект")

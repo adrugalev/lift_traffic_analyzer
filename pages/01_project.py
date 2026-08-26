@@ -47,11 +47,6 @@ with st.form("project_form"):
             project.metadata.customer,
             help="Организация-заказчик, указываемая в общих сведениях отчёта.",
         )
-        designer = st.text_input(
-            "Проектировщик",
-            project.metadata.designer,
-            help="Проектная организация или автор исходной конфигурации здания.",
-        )
     with right:
         building_options = list(BuildingType)
         building_type = st.selectbox(
@@ -96,7 +91,6 @@ if submitted:
     candidate.metadata.name = name.strip() or "Новый проект"
     candidate.metadata.address = address
     candidate.metadata.customer = customer
-    candidate.metadata.designer = designer
     candidate.metadata.calculation_author = "" if calculation_author == "Не выбран" else calculation_author
     candidate.building.building_type = building_type
     if building_type_changed:
