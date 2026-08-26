@@ -11,7 +11,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
-from src import __version__
+from src import APP_NAME, __version__
 from src.models.project import Project
 from src.models.results import CalculationResult, VariantResult
 from src.models.simulation import SimulationResult
@@ -583,7 +583,7 @@ def build_docx_report(
 
     footer = document.sections[0].footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    footer.add_run(f"Lift Traffic Analyzer {__version__} • локальный расчёт")
+    footer.add_run(f"{APP_NAME} {__version__} • локальный расчёт")
     _set_document_language(document)
     stream = BytesIO()
     document.save(stream)

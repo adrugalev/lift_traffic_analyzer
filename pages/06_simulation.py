@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from math import ceil
 
+import pandas as pd
 import streamlit as st
 
 from src.engines.simulation_engine import SimulationEngine
 from src.models.simulation import SimulationSettings
 from src.reports.charts import queue_chart, trajectory_chart, waiting_ecdf, waiting_histogram
 from src.ui import configure_page, ensure_session, invalidate_generated_reports
+from src.utils.elevator_editor import elevator_to_editor_row
 from src.utils.hashing import project_hash
 
 
@@ -46,11 +48,49 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-group = st.selectbox(
-    "Лифтовая группа",
-    project.elevator_groups,
-    format_func=lambda item: item.name,
-    help="Группа лифтов, работа которой будет воспроизведена в симуляции.",
+if not project.elevator_groups or not project.elevator_groups[0].elevators:
+    st.error("В разделе «3. Лифты» необходимо добавить хотя бы один лифт.")
+    st.stop()
+group = project.elevator_groups[0]
+elevators_frame = pd.DataFrame(
+    [elevator_to_editor_row(elevator) for elevator in group.elevators]
+)
+st.subheader("Лифты")
+st.dataframe(
+    elevators_frame,
+    hide_index=True,
+    width="stretch",
+    height="auto",
+    row_height=26,
+    column_config={
+        "Наименование": st.column_config.TextColumn("Лифт", width=95),
+        "Г/п, кг": st.column_config.NumberColumn("Г/п, кг", width=72),
+        "Номинал, пасс.": st.column_config.NumberColumn("Пасс.", width=62),
+        "Заполнение, %": st.column_config.NumberColumn(
+            "Зап., %", format="%d%%", width=72
+        ),
+        "Скорость, м/с": st.column_config.NumberColumn(
+            "v, м/с", format="%.2f", width=70
+        ),
+        "Ускорение, м/с²": st.column_config.NumberColumn("a, м/с²", width=70),
+        "Замедление, м/с²": st.column_config.NumberColumn("b, м/с²", width=70),
+        "Рывок, м/с³": st.column_config.NumberColumn("j, м/с³", width=70),
+        "Дверь, м": st.column_config.NumberColumn("Дверь, м", width=74),
+        "Тип дверей": st.column_config.TextColumn("Тип дверей", width=115),
+        "Открытие, с": st.column_config.NumberColumn("Откр., с", width=72),
+        "Закрытие, с": st.column_config.NumberColumn("Закр., с", width=72),
+        "Предв. открытие, с": st.column_config.NumberColumn(
+            "Пред. откр., с", format="%.2f", width=88
+        ),
+        "Задержка, с": st.column_config.NumberColumn("Стоянка, с", width=80),
+        "Задержка пуска, с": st.column_config.NumberColumn(
+            "Пуск, с", format="%.2f", width=70
+        ),
+        "Посадка, с/пасс.": st.column_config.NumberColumn("Посадка, с", width=84),
+        "Высадка, с/пасс.": st.column_config.NumberColumn("Высадка, с", width=84),
+        "Остановки": st.column_config.NumberColumn("Ост.", width=55),
+        "МГН": st.column_config.CheckboxColumn("МГН", width=55),
+    },
 )
 scenario = project.scenario()
 duration_recommended = 300

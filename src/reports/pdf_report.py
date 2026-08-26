@@ -24,7 +24,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from src import __version__
+from src import APP_NAME, __version__
 from src.models.project import Project
 from src.models.results import CalculationResult, VariantResult
 from src.models.simulation import SimulationResult
@@ -406,7 +406,7 @@ def build_pdf_report(
         canvas.saveState()
         canvas.setFont(regular, 8)
         canvas.setFillColor(colors.HexColor("#5B6770"))
-        canvas.drawString(18 * mm, 9 * mm, f"Lift Traffic Analyzer {__version__}")
+        canvas.drawString(18 * mm, 9 * mm, f"{APP_NAME} {__version__}")
         canvas.drawRightString(A4[0] - 18 * mm, 9 * mm, f"Стр. {doc.page}")
         canvas.restoreState()
 

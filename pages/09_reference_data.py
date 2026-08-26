@@ -18,6 +18,7 @@ from src.reference_guide import (
     formula_symbol_html,
 )
 from src.services.configuration_service import ConfigurationService
+from src.standard_document import GOST_DOCUMENT_FILENAME, gost_document_bytes
 from src.ui import configure_page, ensure_session
 
 
@@ -74,6 +75,31 @@ FORMULA_TABLE_STYLES = """
     font-size: 0.72em;
     line-height: 0;
     vertical-align: -0.35em;
+}
+.st-key-gost_source_links {
+    align-items: center;
+    gap: 0.35rem;
+}
+.st-key-gost_source_links [data-testid="stMarkdown"] {
+    width: auto;
+}
+.st-key-gost_source_links [data-testid="stDownloadButton"] button,
+.st-key-gost_source_links [data-testid="stDownloadButton"] button:hover,
+.st-key-gost_source_links [data-testid="stDownloadButton"] button:focus,
+.st-key-gost_source_links [data-testid="stDownloadButton"] button:active {
+    min-height: auto;
+    height: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: #0068c9;
+    text-decoration: underline;
+}
+.st-key-gost_source_links [data-testid="stDownloadButton"] button p {
+    color: inherit;
+    font-size: 1rem;
+    font-weight: 400;
 }
 </style>
 """
@@ -246,10 +272,24 @@ with criteria_tab:
         "пассажиропотоков в жилых зданиях, гостиницах и офисных зданиях». "
         "Ниже приведены применяемые в расчёте критерии и точные ссылки на стандарт."
     )
-    st.markdown(
-        "[Официальная карточка ГОСТ 34758-2021 в Росстандарте]"
-        f"({normative['source']['official_card']})"
-    )
+    with st.container(
+        key="gost_source_links",
+        horizontal=True,
+        vertical_alignment="center",
+        gap="small",
+    ):
+        st.markdown(
+            "[Официальная карточка ГОСТ 34758-2021 в Росстандарте]"
+            f"({normative['source']['official_card']}) &#45;&#45;",
+            unsafe_allow_html=True,
+        )
+        st.download_button(
+            "скачать ГОСТ",
+            data=gost_document_bytes(),
+            file_name=GOST_DOCUMENT_FILENAME,
+            mime="application/pdf",
+            help="Скачать используемый в расчётах ГОСТ 34758-2021 в формате PDF.",
+        )
 
     st.header("Критерии для оценки лифтовой группы")
     criteria_rows = []

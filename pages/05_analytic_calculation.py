@@ -76,12 +76,10 @@ st.markdown(
 messages = ValidationService.validate_project(project)
 render_messages(messages)
 
-group = st.selectbox(
-    "Лифтовая группа",
-    project.elevator_groups,
-    format_func=lambda item: item.name,
-    help="Группа, для которой будет выполнен предварительный или нормативный расчёт.",
-)
+if not project.elevator_groups:
+    st.error("В разделе «3. Лифты» необходимо добавить хотя бы один лифт.")
+    st.stop()
+group = project.elevator_groups[0]
 methods = st.columns(2)
 with methods[0]:
     st.markdown("**Предварительный расчёт**")

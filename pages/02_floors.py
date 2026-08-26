@@ -89,7 +89,7 @@ if st.button(
         st.session_state.floors_editor_revision = editor_revision + 1
         st.rerun()
 
-display_frame = editor_frame.copy()
+display_frame = editor_frame.sort_values("Этаж", ascending=False).reset_index(drop=True)
 display_frame["Высота, м"] = display_frame["Высота, м"].map(format_decimal)
 
 edited = st.data_editor(

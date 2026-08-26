@@ -30,4 +30,5 @@ def test_gost_download_is_rendered_on_calculation_page(monkeypatch) -> None:
     app.run(timeout=20)
 
     assert not app.exception
+    assert "Лифтовая группа" not in [item.label for item in app.selectbox]
     assert [button.label for button in app.get("download_button")] == ["Скачать DOCX"]

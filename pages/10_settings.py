@@ -7,6 +7,11 @@ import streamlit as st
 
 from src import __version__
 from src.services.configuration_service import ConfigurationService
+from src.standard_document import (
+    GOST_DOCUMENT_FILENAME,
+    GOST_DOCUMENT_LABEL,
+    gost_document_bytes,
+)
 from src.ui import configure_page, ensure_session
 
 
@@ -78,6 +83,59 @@ st.markdown(
         line-height: 48px;
         text-align: left;
     }
+    .st-key-gost_metric_card {
+        height: 103.2px;
+        min-height: 103.2px;
+        padding: 0.8rem;
+        background: #f4f7f9;
+        border: 1px solid #d5e0e5;
+        border-radius: 0.65rem;
+    }
+    .st-key-gost_metric_card
+    [data-testid="stMarkdownContainer"]:has(.version-metric-label) {
+        margin-bottom: 0;
+    }
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] {
+        display: flex;
+        align-items: center;
+        height: 52px;
+        margin: 0;
+    }
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] > div,
+    .st-key-gost_metric_card [data-testid="stDownloadButton"]
+    [data-testid="stTooltipIcon"],
+    .st-key-gost_metric_card [data-testid="stDownloadButton"]
+    [data-testid="stTooltipHoverTarget"],
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] button > div,
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] button span,
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] button
+    [data-testid="stMarkdownContainer"] {
+        width: 100% !important;
+        max-width: none !important;
+        justify-content: center !important;
+    }
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] button {
+        height: 52px;
+        width: 100%;
+        min-width: 100%;
+        justify-content: center;
+        padding: 0 0 4px;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] button:hover,
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] button:focus {
+        border: 0;
+        background: transparent;
+    }
+    .st-key-gost_metric_card [data-testid="stDownloadButton"] p {
+        width: 100%;
+        font-size: 36px;
+        font-weight: 400;
+        line-height: 48px;
+        text-align: center;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -103,14 +161,20 @@ with columns[0].container(key="version_metric_card", gap=None):
             versions,
             str(version_history["history_starts_with"]),
         )
-columns[1].metric(
-    "Нормативный документ",
-    "ГОСТ 34758-2021",
-    help=(
-        "Нормативный документ, методика и критерии которого используются "
-        "при выполнении расчёта по ГОСТ."
-    ),
-)
+with columns[1].container(key="gost_metric_card", gap=None):
+    st.markdown(
+        '<div class="version-metric-label">Нормативный документ</div>',
+        unsafe_allow_html=True,
+    )
+    st.download_button(
+        GOST_DOCUMENT_LABEL,
+        data=gost_document_bytes(),
+        file_name=GOST_DOCUMENT_FILENAME,
+        mime="application/pdf",
+        type="tertiary",
+        width="stretch",
+        help="Нажмите на номер ГОСТ, чтобы скачать нормативный документ в PDF.",
+    )
 
 st.subheader("Локальность и приватность")
 st.write(

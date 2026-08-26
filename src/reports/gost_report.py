@@ -24,7 +24,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from src import __version__
+from src import APP_NAME, __version__
 from src.models.project import Project
 from src.models.results import CalculationResult, ComplianceStatus
 from src.reports.docx_report import (
@@ -427,7 +427,7 @@ def build_gost_docx_report(
     footer = section.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
     footer.add_run(
-        f"ГОСТ 34758-2021 • {project.metadata.name} • Lift Traffic Analyzer {__version__}"
+        f"ГОСТ 34758-2021 • {project.metadata.name} • {APP_NAME} {__version__}"
     )
     _set_document_language(document)
     stream = BytesIO()
