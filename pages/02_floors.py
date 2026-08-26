@@ -7,6 +7,12 @@ import streamlit as st
 
 from src.models.floor import Floor
 from src.ui import configure_page, ensure_session, update_project
+from src.utils.decimal_input import format_decimal
+from src.utils.floor_editor import (
+    apply_floor_bulk_fill,
+    floor_editor_frames_equal,
+    normalize_floor_editor_frame,
+)
 from src.utils.floor_roles import synchronize_main_floor
 
 
@@ -62,13 +68,38 @@ st.session_state.setdefault(
     project.building.occupancy_percent,
 )
 
+if st.button(
+    "Добавить этаж",
+    help=(
+        "Добавляет следующий надземный этаж и автоматически заполняет номер, "
+        "метку, высоту, назначение и население по последнему типовому этажу."
+    ),
+):
+    expanded = pd.concat(
+        [editor_frame, pd.DataFrame([{}])],
+        ignore_index=True,
+    )
+    try:
+        expanded = normalize_floor_editor_frame(expanded, project.floors)
+    except Exception as exc:
+        st.error(f"Не удалось добавить этаж: {exc}")
+    else:
+        st.session_state.floors_editor_pending = expanded.copy()
+        st.session_state.floors_editor_frame = expanded.copy()
+        st.session_state.floors_editor_revision = editor_revision + 1
+        st.rerun()
+
+display_frame = editor_frame.copy()
+display_frame["Высота, м"] = display_frame["Высота, м"].map(format_decimal)
+
 edited = st.data_editor(
-    editor_frame,
-    num_rows="dynamic",
+    display_frame,
+    num_rows="fixed",
     width="stretch",
     height="auto",
     row_height=26,
     hide_index=True,
+    disabled=["Отметка, м"],
     column_config={
         "Этаж": st.column_config.NumberColumn(
             required=True,
@@ -84,21 +115,20 @@ edited = st.data_editor(
             help="Краткое обозначение этажа для интерфейса и отчёта, например «Вход» или «P1».",
         ),
         "Отметка, м": st.column_config.NumberColumn(
-            format="%.1f",
+            format="%.2f",
             width=90,
             help=(
-                "Высотная отметка пола относительно принятого нулевого уровня. "
-                "По разности отметок рассчитываются расстояния движения лифтов."
+                "Рассчитывается автоматически от основного посадочного этажа "
+                "по введённым высотам этажей."
             ),
         ),
-        "Высота, м": st.column_config.NumberColumn(
+        "Высота, м": st.column_config.TextColumn(
             required=True,
-            min_value=0.01,
-            format="%.2f",
             width=85,
             help=(
                 "Высота этажа. Используется как резервное значение расстояния "
-                "между уровнями и при предварительных оценках движения."
+                "между уровнями и при предварительных оценках движения. "
+                "Дробную часть можно отделять запятой или точкой."
             ),
         ),
         "Назначение": st.column_config.TextColumn(
@@ -140,7 +170,24 @@ edited = st.data_editor(
     },
     key=f"floors_editor_{editor_revision}",
 )
+try:
+    normalized_edited = normalize_floor_editor_frame(edited, project.floors)
+except Exception as exc:
+    normalized_edited = edited.copy()
+    st.error(f"Проверьте таблицу этажей: {exc}")
+else:
+    if not floor_editor_frames_equal(normalized_edited, editor_frame):
+        st.session_state.floors_editor_pending = normalized_edited.copy()
+        st.session_state.floors_editor_frame = normalized_edited.copy()
+        st.session_state.floors_editor_revision = editor_revision + 1
+        st.rerun()
+edited = normalized_edited
 st.session_state.floors_editor_frame = edited.copy()
+
+st.caption(
+    "Отметки пересчитываются автоматически по высотам этажей. Новая строка "
+    "получает следующий номер, метку, назначение, высоту и население типового этажа."
+)
 
 occupancy_percent = st.slider(
     "Коэффициент заселённости, %",
@@ -159,8 +206,19 @@ st.caption(
     "в таблице × коэффициент заселённости. При 100% используются полные значения."
 )
 
-if st.session_state.pop("floors_bulk_fill_applied", False):
-    st.success("Массовое заполнение применено. Проверьте таблицу и сохраните этажи.")
+bulk_fill_notice = st.session_state.pop("floors_bulk_fill_applied", None)
+if bulk_fill_notice is not None:
+    added_count = (
+        int(bulk_fill_notice.get("added_count", 0))
+        if isinstance(bulk_fill_notice, dict)
+        else 0
+    )
+    added_text = f" Добавлено новых этажей: {added_count}." if added_count else ""
+    st.success(
+        "Массовое заполнение применено."
+        + added_text
+        + " Проверьте таблицу и сохраните этажи."
+    )
 if st.session_state.pop("floors_saved_notice", False):
     st.success("Этажи сохранены.")
 
@@ -199,14 +257,25 @@ with st.expander("Массовое заполнение и расчёт насе
             "проверить и затем сохранить отдельной кнопкой."
         ),
     ):
-        mask = (edited["Этаж"] >= start_floor) & (edited["Этаж"] <= end_floor)
-        edited.loc[mask, "Высота, м"] = typical_height
-        edited.loc[mask, "Население"] = typical_population
-        st.session_state.floors_editor_pending = edited.copy()
-        st.session_state.floors_editor_frame = edited.copy()
-        st.session_state.floors_editor_revision = editor_revision + 1
-        st.session_state.floors_bulk_fill_applied = True
-        st.rerun()
+        try:
+            bulk_filled, added_count = apply_floor_bulk_fill(
+                edited,
+                project.floors,
+                int(start_floor),
+                int(end_floor),
+                float(typical_height),
+                int(typical_population),
+            )
+        except Exception as exc:
+            st.error(f"Не удалось применить массовое заполнение: {exc}")
+        else:
+            st.session_state.floors_editor_pending = bulk_filled.copy()
+            st.session_state.floors_editor_frame = bulk_filled.copy()
+            st.session_state.floors_editor_revision = editor_revision + 1
+            st.session_state.floors_bulk_fill_applied = {
+                "added_count": added_count
+            }
+            st.rerun()
 
 if st.button(
     "Сохранить этажи",
@@ -237,6 +306,15 @@ if st.button(
             )
             for row in edited.to_dict("records")
         ]
+        floor_numbers = sorted(floor.number for floor in candidate.floors)
+        for group in candidate.elevator_groups:
+            group.served_floors = floor_numbers.copy()
+            for elevator in group.elevators:
+                elevator.stops_count = len(floor_numbers)
+                elevator.travel_height_m = (
+                    max(floor.elevation_m for floor in candidate.floors)
+                    - min(floor.elevation_m for floor in candidate.floors)
+                )
         candidate.building.occupancy_percent = int(occupancy_percent)
         candidate = synchronize_main_floor(candidate)
         update_project(candidate)

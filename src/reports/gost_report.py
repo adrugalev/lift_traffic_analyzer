@@ -192,7 +192,6 @@ def build_gost_docx_report(
             "Высота, м",
             "Назначение",
             "Расч. население",
-            "Обслуживание",
         ],
         [
             [
@@ -202,14 +201,10 @@ def build_gost_docx_report(
                 f"{floor.floor_height_m:.2f}",
                 floor.purpose,
                 f"{project.effective_floor_population(floor):.1f}",
-                _format_floor_marking(project, floor.number),
             ]
             for floor in sorted(project.floors, key=lambda item: item.elevation_m, reverse=True)
         ],
-        [0.55, 1.0, 0.85, 0.75, 1.25, 1.15, 1.35],
-    )
-    document.add_paragraph(
-        "Обозначения: X — этаж обслуживается группой; I — этаж группой не обслуживается."
+        [0.65, 1.1, 1.0, 0.85, 1.75, 1.55],
     )
 
     document.add_heading("2.2. Размещение лифтовых групп", level=2)
@@ -691,7 +686,7 @@ def build_gost_pdf_report(
             show_header=False,
         ),
         table(
-            ["Этаж", "Метка", "Высота", "Назначение", "Расч. население", "Группы"],
+            ["Этаж", "Метка", "Высота", "Назначение", "Расч. население"],
             [
                 [
                     floor.number,
@@ -699,11 +694,10 @@ def build_gost_pdf_report(
                     f"{floor.floor_height_m:.2f} м",
                     floor.purpose,
                     f"{project.effective_floor_population(floor):.1f}",
-                    _format_floor_marking(project, floor.number),
                 ]
                 for floor in sorted(project.floors, key=lambda item: item.elevation_m, reverse=True)
             ],
-            [13, 18, 23, 42, 25, 47],
+            [17, 23, 28, 60, 40],
         ),
         paragraph("3. Критерии проектирования", "h1"),
         table(

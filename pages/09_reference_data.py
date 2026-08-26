@@ -147,7 +147,7 @@ def _profile_card(profile: dict[str, object], example: str) -> None:
 
 configure_page("Справочники и формулы")
 ensure_session()
-st.title("9. Справочники и формулы")
+st.title("8. Справочники и формулы")
 st.markdown(FORMULA_TABLE_STYLES, unsafe_allow_html=True)
 
 configuration = ConfigurationService()

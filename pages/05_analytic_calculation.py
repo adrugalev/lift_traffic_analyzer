@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.engines.analytic_engine import AnalyticEngine, NormativeConfigurationError
 from src.engines.recommendation_engine import RecommendationEngine
+from src.reports.gost_report import build_gost_docx_report, build_gost_pdf_report
 from src.services.validation_service import ValidationService
 from src.ui import (
     configure_page,
@@ -15,13 +16,31 @@ from src.ui import (
     render_messages,
     update_project,
 )
+from src.utils.file_utils import safe_filename
 from src.utils.traffic_profiles import scenario_for_gost_calculation
 
 
-configure_page("Аналитический расчёт")
+def _generate_gost_exports(project, result) -> list[str]:
+    """Независимо формирует DOCX и PDF нормативного отчёта."""
+
+    for key in ("gost_report_docx", "gost_report_pdf"):
+        st.session_state.pop(key, None)
+    errors: list[str] = []
+    try:
+        st.session_state.gost_report_docx = build_gost_docx_report(project, result)
+    except Exception as exc:
+        errors.append(f"DOCX: {exc}")
+    try:
+        st.session_state.gost_report_pdf = build_gost_pdf_report(project, result)
+    except Exception as exc:
+        errors.append(f"PDF: {exc}")
+    return errors
+
+
+configure_page("Расчёт и отчёт")
 project = ensure_session()
 engine = AnalyticEngine()
-st.title("5. Аналитический расчёт")
+st.title("5. Расчёт и отчёт")
 st.markdown(
     """
     <style>
@@ -121,13 +140,70 @@ if normative_clicked:
         result.recommendations = RecommendationEngine.generate(result)
         update_project(normative_project)
         st.session_state.analytic_result = result
+        with st.spinner("Подготавливается отчёт по ГОСТ…"):
+            gost_export_errors = _generate_gost_exports(normative_project, result)
         st.success("Расчёт по ГОСТ выполнен.")
+        if gost_export_errors:
+            st.error(
+                "Не удалось подготовить отдельные форматы отчёта: "
+                + "; ".join(gost_export_errors)
+            )
     except NormativeConfigurationError as exc:
         st.error(str(exc))
     except Exception as exc:
         st.error(str(exc))
 
 result = st.session_state.analytic_result
+if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
+    with methods[1]:
+        st.caption("Отчёт по результатам нормативного расчёта")
+        available_gost_reports = [
+            ("DOCX", st.session_state.get("gost_report_docx")),
+            ("PDF", st.session_state.get("gost_report_pdf")),
+        ]
+        available_gost_reports = [
+            (kind, data) for kind, data in available_gost_reports if data is not None
+        ]
+        if not available_gost_reports:
+            if st.button(
+                "Подготовить отчёт по ГОСТ",
+                key="prepare_gost_report",
+                use_container_width=True,
+                help="Формирует DOCX и PDF по результатам сохранённого расчёта.",
+            ):
+                with st.spinner("Подготавливается отчёт по ГОСТ…"):
+                    gost_export_errors = _generate_gost_exports(project, result)
+                if gost_export_errors:
+                    st.error(
+                        "Не удалось подготовить отдельные форматы отчёта: "
+                        + "; ".join(gost_export_errors)
+                    )
+                st.rerun()
+        else:
+            base_name = safe_filename(st.session_state.project.metadata.name)
+            download_columns = st.columns(len(available_gost_reports))
+            for column, (kind, data) in zip(
+                download_columns, available_gost_reports, strict=True
+            ):
+                if kind == "DOCX":
+                    column.download_button(
+                        "Скачать DOCX",
+                        data,
+                        f"{base_name}_GOST_34758-2021.docx",
+                        "application/vnd.openxmlformats-officedocument."
+                        "wordprocessingml.document",
+                        use_container_width=True,
+                        help="Скачивает редактируемый отчёт по ГОСТ.",
+                    )
+                else:
+                    column.download_button(
+                        "Скачать PDF",
+                        data,
+                        f"{base_name}_GOST_34758-2021.pdf",
+                        "application/pdf",
+                        use_container_width=True,
+                        help="Скачивает отчёт по ГОСТ с фиксированной вёрсткой.",
+                    )
 if result:
     st.subheader("Основные показатели")
     keys = ["interval", "handling_capacity_5min", "average_wait_proxy", "reserve"]

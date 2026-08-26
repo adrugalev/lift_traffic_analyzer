@@ -254,6 +254,14 @@ def test_gost_report_contains_section_9_information() -> None:
         for table in document.tables
         if table.cell(0, 0).text == "Этаж"
     )
+    assert [cell.text for cell in floors_table.rows[0].cells] == [
+        "Этаж",
+        "Маркировка",
+        "Отметка, м",
+        "Высота, м",
+        "Назначение",
+        "Расч. население",
+    ]
     floor_widths = [
         int(column.get(qn("w:w")))
         for column in floors_table._tbl.tblGrid

@@ -273,13 +273,6 @@ class SimulationEngine:
         weights: np.ndarray,
         rng: np.random.Generator,
     ) -> tuple[int, int]:
-        if scenario.od_matrix:
-            floor_numbers = scenario.od_floor_numbers
-            active_rows = [index for index, row in enumerate(scenario.od_matrix) if sum(row) > 0]
-            origin_index = int(rng.choice(active_rows))
-            destination_index = int(rng.choice(len(floor_numbers), p=scenario.od_matrix[origin_index]))
-            return floor_numbers[origin_index], floor_numbers[destination_index]
-
         movement = str(
             rng.choice(
                 ["incoming", "outgoing", "interfloor"],

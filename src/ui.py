@@ -16,15 +16,19 @@ NAVIGATION = (
     ("app.py", "Главная"),
     ("pages/01_project.py", "1. Проект"),
     ("pages/02_floors.py", "2. Этажи"),
-    ("pages/03_elevator_groups.py", "3. Лифтовые группы"),
+    ("pages/03_elevator_groups.py", "3. Лифты"),
     ("pages/04_traffic.py", "4. Пассажиропоток"),
-    ("pages/05_analytic_calculation.py", "5. Аналитический расчёт"),
+    ("pages/05_analytic_calculation.py", "5. Расчёт и отчёт"),
     ("pages/06_simulation.py", "6. Симуляция"),
     ("pages/07_comparison.py", "7. Сравнение вариантов"),
-    ("pages/08_report.py", "8. Отчёт"),
-    ("pages/09_reference_data.py", "9. Справочники и формулы"),
-    ("pages/10_settings.py", "10. О программе"),
+    ("pages/09_reference_data.py", "8. Справочники и формулы"),
+    ("pages/10_settings.py", "9. О программе"),
 )
+
+ADDITIONAL_NAVIGATION = {
+    "pages/06_simulation.py",
+    "pages/07_comparison.py",
+}
 
 GENERATED_REPORT_KEYS = (
     "report_docx",
@@ -47,7 +51,18 @@ def render_navigation() -> None:
 
     with st.sidebar:
         st.caption("РАЗДЕЛЫ")
-        for page, label in NAVIGATION:
+        for page, label in NAVIGATION[:6]:
+            st.page_link(page, label=label, use_container_width=True)
+        show_additional = st.checkbox(
+            "Показать дополнительные разделы",
+            key="show_additional_sections",
+            help="Открывает разделы «Симуляция» и «Сравнение вариантов».",
+        )
+        if show_additional:
+            for page, label in NAVIGATION:
+                if page in ADDITIONAL_NAVIGATION:
+                    st.page_link(page, label=label, use_container_width=True)
+        for page, label in NAVIGATION[8:]:
             st.page_link(page, label=label, use_container_width=True)
 
 

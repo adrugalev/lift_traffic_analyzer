@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import os
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -35,18 +36,34 @@ from src.reports.formula_rendering import (
 
 
 def _register_fonts() -> tuple[str, str]:
-    regular_candidates = [
-        Path("C:/Windows/Fonts/arial.ttf"),
-        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    project_fonts = Path(__file__).resolve().parents[2] / "assets" / "fonts"
+    custom_fonts = Path(os.environ.get("LTA_PDF_FONT_DIR", project_fonts))
+    font_pairs = [
+        (custom_fonts / "DejaVuSans.ttf", custom_fonts / "DejaVuSans-Bold.ttf"),
+        (Path("C:/Windows/Fonts/arial.ttf"), Path("C:/Windows/Fonts/arialbd.ttf")),
+        (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/freefont/FreeSans.ttf"),
+            Path("/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"),
+        ),
     ]
-    bold_candidates = [
-        Path("C:/Windows/Fonts/arialbd.ttf"),
-        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-    ]
-    regular = next((path for path in regular_candidates if path.exists()), None)
-    bold = next((path for path in bold_candidates if path.exists()), None)
-    if regular is None or bold is None:
-        raise RuntimeError("Не найден шрифт с поддержкой кириллицы для PDF.")
+    font_pair = next(
+        ((regular, bold) for regular, bold in font_pairs if regular.is_file() and bold.is_file()),
+        None,
+    )
+    if font_pair is None:
+        raise RuntimeError(
+            "Не найден кириллический шрифт для PDF. "
+            "Для Linux установите пакет fonts-dejavu-core."
+        )
+    regular, bold = font_pair
     pdfmetrics.registerFont(TTFont("LTA-Regular", str(regular)))
     pdfmetrics.registerFont(TTFont("LTA-Bold", str(bold)))
     return "LTA-Regular", "LTA-Bold"

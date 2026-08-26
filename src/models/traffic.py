@@ -1,4 +1,4 @@
-"""Модели пассажиропотока и OD-матрицы."""
+"""Модели пассажиропотока."""
 
 from __future__ import annotations
 
@@ -50,8 +50,6 @@ class TrafficScenario(BaseModel):
     arrival_distribution: ArrivalDistribution = ArrivalDistribution.POISSON
     intensity_profile: list[float] = Field(default_factory=list)
     random_bursts: bool = False
-    od_floor_numbers: list[int] = Field(default_factory=list)
-    od_matrix: list[list[float]] = Field(default_factory=list)
     imported_passengers: list[dict[str, float | int]] = Field(default_factory=list)
 
     @field_validator("duration_s")
@@ -82,24 +80,12 @@ class TrafficScenario(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_shares_and_od(self) -> "TrafficScenario":
-        """Проверяет доли направлений и форму OD-матрицы."""
+    def validate_shares(self) -> "TrafficScenario":
+        """Проверяет доли направлений пассажиропотока."""
 
         shares = (self.incoming_share, self.outgoing_share, self.interfloor_share)
         if any(value < 0 or value > 1 for value in shares):
             raise ValueError("Доли направлений должны находиться в диапазоне [0; 1].")
         if abs(sum(shares) - 1.0) > 1e-6:
             raise ValueError("Сумма долей входящего, исходящего и межэтажного потока должна быть равна 1.")
-        if self.od_matrix:
-            size = len(self.od_floor_numbers)
-            if size == 0 or len(self.od_matrix) != size or any(len(row) != size for row in self.od_matrix):
-                raise ValueError("Размер OD-матрицы должен соответствовать списку этажей.")
-            for index, row in enumerate(self.od_matrix):
-                if abs(row[index]) > 1e-12:
-                    raise ValueError("Диагональ OD-матрицы должна быть нулевой.")
-                if any(value < 0 for value in row):
-                    raise ValueError("OD-матрица не может содержать отрицательные вероятности.")
-                row_sum = sum(row)
-                if row_sum > 0 and abs(row_sum - 1.0) > 1e-6:
-                    raise ValueError("Каждая ненулевая строка OD-матрицы должна иметь сумму 1.")
         return self

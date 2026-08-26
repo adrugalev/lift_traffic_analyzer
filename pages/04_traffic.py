@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pandas as pd
 import streamlit as st
 
 from src.models.traffic import ArrivalDistribution, TrafficScenario, TrafficScenarioType
@@ -364,32 +363,3 @@ if parking_floors:
 st.caption(
     "Показатель пересчитывается сразу по текущему населению здания и выбранному проценту."
 )
-
-with st.expander("Пользовательская OD-матрица"):
-    floors = [floor.number for floor in project.floors]
-    if scenario.od_matrix and scenario.od_floor_numbers == floors:
-        matrix = pd.DataFrame(scenario.od_matrix, index=floors, columns=floors)
-    else:
-        matrix = pd.DataFrame(0.0, index=floors, columns=floors)
-    edited_matrix = st.data_editor(matrix, use_container_width=True)
-    st.caption("Диагональ должна быть нулевой; сумма каждой ненулевой строки — 1.")
-    if st.button(
-        "Сохранить OD-матрицу",
-        help=(
-            "Проверяет и сохраняет вероятности поездок между каждой парой этажей. "
-            "Матрица используется симуляцией для выбора этажей назначения."
-        ),
-    ):
-        try:
-            values = edited_matrix.astype(float).values.tolist()
-            updated = scenario.model_copy(
-                update={"od_floor_numbers": floors, "od_matrix": values}
-            )
-            updated = TrafficScenario.model_validate(updated.model_dump())
-            candidate = project.model_copy(deep=True)
-            index = next(i for i, item in enumerate(candidate.traffic_scenarios) if item.id == scenario.id)
-            candidate.traffic_scenarios[index] = updated
-            update_project(candidate)
-            st.success("OD-матрица сохранена.")
-        except Exception as exc:
-            st.error(f"OD-матрица отклонена: {exc}")

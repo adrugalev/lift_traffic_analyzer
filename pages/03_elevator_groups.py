@@ -1,4 +1,4 @@
-"""Редактор лифтовых групп и неоднородных кабин."""
+"""Табличный редактор лифтов."""
 
 from __future__ import annotations
 
@@ -7,9 +7,16 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
-from src.models.elevator import ControlType, DoorOpeningType, Elevator, ElevatorGroup
-from src.services.elevator_service import clone_last_elevator
+from src.models.elevator import DoorOpeningType, Elevator, ElevatorGroup
 from src.ui import configure_page, ensure_session, update_project
+from src.utils.decimal_input import format_decimal
+from src.utils.elevator_editor import (
+    ELEVATOR_DECIMAL_COLUMNS,
+    elevator_editor_frames_equal,
+    elevator_to_editor_row,
+    normalize_elevator_editor_frame,
+)
+from src.utils.series_fill import continue_copied_series
 
 
 def _elevators_from_editor(
@@ -54,128 +61,82 @@ def _elevators_from_editor(
     return elevators
 
 
-configure_page("Лифтовые группы")
+configure_page("Лифты")
 project = ensure_session()
-st.title("3. Лифтовые группы")
+st.title("3. Лифты")
 
 if not project.elevator_groups:
     project.elevator_groups = [ElevatorGroup()]
 
-group_names = [group.name for group in project.elevator_groups]
-selected_name = st.selectbox(
-    "Редактируемая группа",
-    group_names,
-    help="Выберите лифтовую группу, параметры и состав которой требуется изменить.",
-)
-selected_index = group_names.index(selected_name)
-group = project.elevator_groups[selected_index]
-
-actions = st.columns(3)
-if actions[0].button(
-    "Добавить группу",
-    help="Создаёт новую группу, первоначально обслуживающую все этажи проекта.",
-):
-    candidate = project.model_copy(deep=True)
-    floors = [floor.number for floor in candidate.floors]
-    candidate.elevator_groups.append(
-        ElevatorGroup(
-            name=f"Группа {chr(65 + len(candidate.elevator_groups))}",
-            main_floor=floors[0],
-            served_floors=floors,
-        )
+existing_elevators = [
+    elevator
+    for existing_group in project.elevator_groups
+    for elevator in existing_group.elevators
+]
+project_elevator_rows = [
+    elevator_to_editor_row(elevator) for elevator in existing_elevators
+]
+stops_count = len(project.floors)
+editor_revision = int(st.session_state.get("elevators_editor_revision", 0))
+if st.session_state.get("elevators_editor_project_id") != project.id:
+    st.session_state.pop("elevators_editor_pending", None)
+    st.session_state.elevators_editor_revision = editor_revision + 1
+    st.session_state.elevators_editor_project_id = project.id
+    editor_revision += 1
+    editor_frame = pd.DataFrame(project_elevator_rows)
+elif "elevators_editor_pending" in st.session_state:
+    editor_frame = st.session_state.pop("elevators_editor_pending")
+else:
+    editor_frame = st.session_state.get(
+        "elevators_editor_frame", pd.DataFrame(project_elevator_rows)
     )
-    update_project(candidate)
-    st.rerun()
-if actions[1].button(
-    "Копировать группу",
-    help="Создаёт независимую копию выбранной группы для разработки другого варианта.",
-):
-    candidate = project.model_copy(deep=True)
-    copy = group.model_copy(deep=True)
-    copy.id = f"{copy.id}-copy"
-    copy.name = f"{copy.name} — копия"
-    for index, elevator in enumerate(copy.elevators):
-        elevator.id = f"{elevator.id}-copy-{index}"
-    copy.control_type = ControlType.GROUP_COLLECTIVE
-    candidate.elevator_groups.append(copy)
-    update_project(candidate)
-    st.rerun()
-if actions[2].button(
-    "Удалить группу",
-    disabled=len(project.elevator_groups) == 1,
+
+if st.button(
+    "Добавить лифт",
     help=(
-        "Удаляет выбранную группу. Единственную оставшуюся группу удалить нельзя."
+        "Добавляет новую строку, продолжает нумерацию наименования и копирует "
+        "параметры предыдущего лифта."
     ),
 ):
-    candidate = project.model_copy(deep=True)
-    del candidate.elevator_groups[selected_index]
-    update_project(candidate)
-    st.rerun()
+    expanded = pd.concat([editor_frame, pd.DataFrame([{}])], ignore_index=True)
+    try:
+        expanded = normalize_elevator_editor_frame(
+            expanded, existing_elevators, stops_count
+        )
+    except Exception as exc:
+        st.error(f"Не удалось добавить лифт: {exc}")
+    else:
+        st.session_state.elevators_editor_pending = expanded.copy()
+        st.session_state.elevators_editor_frame = expanded.copy()
+        st.session_state.elevators_editor_revision = editor_revision + 1
+        st.rerun()
 
-st.subheader("Параметры группы")
-left, right = st.columns(2)
-with left:
-    group_name = st.text_input(
-        "Название группы",
-        group.name,
-        help="Наименование группы в расчётах, сравнении вариантов и отчётах.",
-    )
-with right:
-    served_floors = st.multiselect(
-        "Обслуживаемые этажи",
-        [floor.number for floor in project.floors],
-        default=[floor for floor in group.served_floors if floor in {item.number for item in project.floors}],
-        help=(
-            "Этажи, между которыми перемещаются лифты группы. Основной посадочный "
-            "этаж проекта добавляется автоматически."
-        ),
-    )
+display_frame = editor_frame.copy()
+for decimal_column in ELEVATOR_DECIMAL_COLUMNS:
+    display_frame[decimal_column] = display_frame[decimal_column].map(format_decimal)
 
-st.subheader("Лифты группы")
-elevator_rows = [
-    {
-        "Наименование": elevator.name,
-        "Г/п, кг": elevator.capacity_kg,
-        "Номинал, пасс.": elevator.nominal_passengers,
-        "Заполнение, %": round(elevator.load_factor * 100),
-        "Скорость, м/с": elevator.speed_mps,
-        "Ускорение, м/с²": elevator.acceleration_mps2,
-        "Замедление, м/с²": elevator.deceleration_mps2,
-        "Рывок, м/с³": elevator.jerk_mps3,
-        "Дверь, м": elevator.door_width_m,
-        "Тип дверей": elevator.door_opening_type.value,
-        "Открытие, с": elevator.door_open_time_s,
-        "Закрытие, с": elevator.door_close_time_s,
-        "Предв. открытие, с": elevator.pre_open_time_s,
-        "Задержка, с": elevator.door_dwell_time_s,
-        "Задержка пуска, с": elevator.start_brake_allowance_s,
-        "Посадка, с/пасс.": elevator.boarding_time_per_passenger_s,
-        "Высадка, с/пасс.": elevator.alighting_time_per_passenger_s,
-        "Остановки": elevator.stops_count,
-        "МГН": elevator.accessible,
-    }
-    for elevator in group.elevators
-]
 edited = st.data_editor(
-    pd.DataFrame(elevator_rows),
-    num_rows="dynamic",
-    use_container_width=True,
-    height=max(150, min(420, 32 * (len(elevator_rows) + 2))),
-    row_height=30,
+    display_frame,
+    key=f"elevators_editor_{editor_revision}",
+    num_rows="fixed",
+    width="stretch",
+    height="auto",
+    row_height=26,
     hide_index=True,
+    disabled=["Остановки"],
     column_config={
         "Наименование": st.column_config.TextColumn(
             "Лифт",
             width=95,
             help="Наименование лифта",
         ),
-        "Г/п, кг": st.column_config.NumberColumn(
+        "Г/п, кг": st.column_config.TextColumn(
             "Г/п, кг",
             width=72,
-            min_value=1.0,
             help=(
                 "Номинальная грузоподъёмность. В расчёте по ГОСТ номинальная "
-                "вместимость проверяется как грузоподъёмность, делённая на 75 кг."
+                "вместимость проверяется как грузоподъёмность, делённая на 75 кг. "
+                "Допустимы запятая и точка."
             ),
         ),
         "Номинал, пасс.": st.column_config.NumberColumn(
@@ -194,39 +155,34 @@ edited = st.data_editor(
             step=1,
             format="%d%%",
         ),
-        "Скорость, м/с": st.column_config.NumberColumn(
+        "Скорость, м/с": st.column_config.TextColumn(
             "v, м/с",
             width=70,
-            help="Номинальная скорость",
-            min_value=0.01,
-            format="%.2f",
+            help="Номинальная скорость. Допустимы запятая и точка.",
         ),
-        "Ускорение, м/с²": st.column_config.NumberColumn(
+        "Ускорение, м/с²": st.column_config.TextColumn(
             "a, м/с²",
             width=70,
-            help="Ускорение",
-            min_value=0.01,
+            help="Ускорение. Допустимы запятая и точка.",
         ),
-        "Замедление, м/с²": st.column_config.NumberColumn(
+        "Замедление, м/с²": st.column_config.TextColumn(
             "b, м/с²",
             width=70,
-            help="Замедление",
-            min_value=0.01,
+            help="Замедление. Допустимы запятая и точка.",
         ),
-        "Рывок, м/с³": st.column_config.NumberColumn(
+        "Рывок, м/с³": st.column_config.TextColumn(
             "j, м/с³",
             width=70,
             help=(
                 "Ограничение темпа изменения ускорения, характеризующее плавность "
-                "хода. Учитывается в S-образном профиле межэтажного движения."
+                "хода. Учитывается в S-образном профиле межэтажного движения. "
+                "Допустимы запятая и точка."
             ),
-            min_value=0.0,
         ),
-        "Дверь, м": st.column_config.NumberColumn(
+        "Дверь, м": st.column_config.TextColumn(
             "Дверь, м",
             width=74,
-            help="Ширина дверного проёма",
-            min_value=0.01,
+            help="Ширина дверного проёма. Допустимы запятая и точка.",
         ),
         "Тип дверей": st.column_config.SelectboxColumn(
             "Тип дверей",
@@ -234,49 +190,40 @@ edited = st.data_editor(
             options=[item.value for item in DoorOpeningType],
             help="Конструктивный тип открывания дверей кабины.",
         ),
-        "Открытие, с": st.column_config.NumberColumn(
+        "Открытие, с": st.column_config.TextColumn(
             "Откр., с",
             width=72,
-            help="Время открывания дверей",
-            min_value=0.0,
+            help="Время открывания дверей. Допустимы запятая и точка.",
         ),
-        "Закрытие, с": st.column_config.NumberColumn(
+        "Закрытие, с": st.column_config.TextColumn(
             "Закр., с",
             width=72,
-            help="Время закрывания дверей",
-            min_value=0.0,
+            help="Время закрывания дверей. Допустимы запятая и точка.",
         ),
-        "Предв. открытие, с": st.column_config.NumberColumn(
+        "Предв. открытие, с": st.column_config.TextColumn(
             "Пред. откр., с",
             width=88,
-            help="Время предварительного открывания дверей",
-            min_value=0.0,
-            format="%.2f",
+            help="Время предварительного открывания дверей. Допустимы запятая и точка.",
         ),
-        "Задержка, с": st.column_config.NumberColumn(
+        "Задержка, с": st.column_config.TextColumn(
             "Стоянка, с",
             width=80,
-            help="Время стоянки с открытыми дверями",
-            min_value=0.0,
+            help="Время стоянки с открытыми дверями. Допустимы запятая и точка.",
         ),
-        "Задержка пуска, с": st.column_config.NumberColumn(
+        "Задержка пуска, с": st.column_config.TextColumn(
             "Пуск, с",
             width=70,
-            help="Поправка на пуск и торможение",
-            min_value=0.0,
-            format="%.2f",
+            help="Поправка на пуск и торможение. Допустимы запятая и точка.",
         ),
-        "Посадка, с/пасс.": st.column_config.NumberColumn(
+        "Посадка, с/пасс.": st.column_config.TextColumn(
             "Посадка, с",
             width=84,
-            help="Время посадки одного пассажира",
-            min_value=0.0,
+            help="Время посадки одного пассажира. Допустимы запятая и точка.",
         ),
-        "Высадка, с/пасс.": st.column_config.NumberColumn(
+        "Высадка, с/пасс.": st.column_config.TextColumn(
             "Высадка, с",
             width=84,
-            help="Время высадки одного пассажира",
-            min_value=0.0,
+            help="Время высадки одного пассажира. Допустимы запятая и точка.",
         ),
         "Остановки": st.column_config.NumberColumn(
             "Ост.",
@@ -298,54 +245,120 @@ edited = st.data_editor(
         ),
     },
 )
+try:
+    normalized_edited = normalize_elevator_editor_frame(
+        edited, existing_elevators, stops_count
+    )
+except Exception as exc:
+    normalized_edited = edited.copy()
+    st.error(f"Проверьте таблицу лифтов: {exc}")
+else:
+    previous_editor_frame = st.session_state.get(
+        "elevators_editor_previous", editor_frame
+    )
+    normalized_edited, series_continued = continue_copied_series(
+        previous_editor_frame, normalized_edited
+    )
+    if series_continued:
+        st.session_state.elevators_editor_pending = normalized_edited.copy()
+        st.session_state.elevators_editor_frame = normalized_edited.copy()
+        st.session_state.elevators_editor_previous = normalized_edited.copy()
+        st.session_state.elevators_editor_revision = editor_revision + 1
+        st.rerun()
+    if not elevator_editor_frames_equal(normalized_edited, editor_frame):
+        st.session_state.elevators_editor_pending = normalized_edited.copy()
+        st.session_state.elevators_editor_frame = normalized_edited.copy()
+        st.session_state.elevators_editor_revision = editor_revision + 1
+        st.rerun()
+edited = normalized_edited
+st.session_state.elevators_editor_frame = edited.copy()
+st.session_state.elevators_editor_previous = edited.copy()
 
-button_columns = st.columns([1, 1, 4])
-add_elevator_clicked = button_columns[0].button(
-    "Добавить лифт",
-    help=(
-        "Добавляет в группу новый лифт, полностью копируя параметры последнего "
-        "лифта в таблице."
-    ),
+st.caption(
+    "Новая строка продолжает нумерацию и получает параметры предыдущего лифта. "
+    "Количество остановок синхронизируется с таблицей этажей автоматически."
 )
-save_group_clicked = button_columns[1].button(
-    "Сохранить группу",
+
+if st.session_state.pop("elevators_saved_notice", False):
+    st.success("Лифты сохранены.")
+
+with st.expander("Массовое заполнение параметров лифтов"):
+    template_name = st.selectbox(
+        "Лифт-образец",
+        edited["Наименование"].astype(str).tolist(),
+        help="Параметры выбранного лифта будут перенесены во все строки.",
+    )
+    if st.button(
+        "Применить параметры ко всем лифтам",
+        help="Копирует все параметры, кроме наименований, во все строки таблицы.",
+    ):
+        template_row = edited.loc[
+            edited["Наименование"].astype(str) == template_name
+        ].iloc[0]
+        for column in edited.columns:
+            if column not in {"Наименование", "Остановки"}:
+                edited[column] = template_row[column]
+        st.session_state.elevators_editor_pending = edited.copy()
+        st.session_state.elevators_editor_frame = edited.copy()
+        st.session_state.elevators_editor_revision = editor_revision + 1
+        st.rerun()
+
+if st.button(
+    "Сохранить лифты",
     type="primary",
     help=(
-        "Сохраняет название, обслуживаемые этажи и параметры всех лифтов "
-        "выбранной группы."
+        "Сохраняет таблицу. Все лифты автоматически назначаются на все этажи "
+        "проекта."
     ),
-)
-
-if add_elevator_clicked or save_group_clicked:
+):
     try:
-        if not served_floors:
-            raise ValueError("Выберите хотя бы один обслуживаемый этаж.")
         if edited.empty:
             raise ValueError("Добавьте хотя бы один лифт.")
         candidate = project.model_copy(deep=True)
-        original = candidate.elevator_groups[selected_index]
+        original = candidate.elevator_groups[0]
         elevators = _elevators_from_editor(
             edited.to_dict("records"),
-            original.elevators,
+            existing_elevators,
         )
-        if add_elevator_clicked:
-            elevators.append(clone_last_elevator(elevators))
-        candidate.elevator_groups[selected_index] = ElevatorGroup(
+        floor_numbers = sorted(floor.number for floor in candidate.floors)
+        main_floor = next(
+            (
+                floor.number
+                for floor in candidate.floors
+                if floor.is_main_entrance
+            ),
+            floor_numbers[0],
+        )
+        travel_height = (
+            max(floor.elevation_m for floor in candidate.floors)
+            - min(floor.elevation_m for floor in candidate.floors)
+        )
+        for elevator in elevators:
+            elevator.stops_count = len(floor_numbers)
+            elevator.travel_height_m = travel_height
+        unified_group = ElevatorGroup(
             **{
                 **original.model_dump(),
-                "name": group_name,
-                "control_type": ControlType.GROUP_COLLECTIVE,
-                "served_floors": sorted(
-                    {int(value) for value in served_floors}
-                    | {original.main_floor}
-                ),
+                "name": "Лифты",
+                "service_zone_name": "Все этажи",
+                "main_floor": main_floor,
+                "served_floors": floor_numbers,
                 "express_zone": False,
                 "elevators": elevators,
             }
         )
+        candidate.elevator_groups = [unified_group]
+        for floor in candidate.floors:
+            floor.served_by_group_ids = [unified_group.id]
         update_project(candidate)
-        if add_elevator_clicked:
-            st.rerun()
-        st.success("Лифтовая группа сохранена.")
+        st.session_state.elevators_editor_pending = pd.DataFrame(
+            [elevator_to_editor_row(elevator) for elevator in elevators]
+        )
+        st.session_state.elevators_editor_frame = (
+            st.session_state.elevators_editor_pending.copy()
+        )
+        st.session_state.elevators_editor_revision = editor_revision + 1
+        st.session_state.elevators_saved_notice = True
+        st.rerun()
     except Exception as exc:
-        st.error(f"Не удалось сохранить группу: {exc}")
+        st.error(f"Не удалось сохранить лифты: {exc}")

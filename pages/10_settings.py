@@ -41,7 +41,7 @@ def show_version_history(
 
 configure_page("О программе")
 ensure_session()
-st.title("10. О программе")
+st.title("9. О программе")
 st.markdown(
     """
     <style>
