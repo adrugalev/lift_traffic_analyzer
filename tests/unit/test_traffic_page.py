@@ -23,7 +23,7 @@ def test_gost_scenario_fills_and_locks_normative_parameters(monkeypatch) -> None
     scenario_select = next(
         item for item in app.selectbox if item.label == "Тип сценария"
     )
-    scenario_select.select(TrafficScenarioType.GOST).run(timeout=20)
+    scenario_select.select("По ГОСТ").run(timeout=20)
 
     distribution_select = next(
         item
@@ -56,4 +56,6 @@ def test_gost_scenario_fills_and_locks_normative_parameters(monkeypatch) -> None
     next(
         button for button in app.button if button.label == "Сохранить сценарий"
     ).click().run(timeout=20)
-    assert app.session_state["project"].scenario().scenario_type is TrafficScenarioType.GOST
+    saved_scenario = app.session_state["project"].scenario()
+    assert saved_scenario.name == "По ГОСТ"
+    assert saved_scenario.scenario_type is TrafficScenarioType.UP_PEAK

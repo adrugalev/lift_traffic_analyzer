@@ -56,6 +56,22 @@ POPULATION_PERCENT_KEY = "traffic_population_percent_5min"
 SCENARIO_TYPE_KEY = "traffic_scenario_type"
 ARRIVAL_DISTRIBUTION_KEY = "traffic_arrival_distribution"
 RANDOM_BURSTS_KEY = "traffic_random_bursts"
+GOST_SCENARIO_LABEL = "По ГОСТ"
+GOST_SCENARIO_DESCRIPTION = (
+    "Нормативный восходящий пассажиропоток для расчёта по ГОСТ 34758-2021. "
+    "Приложение автоматически принимает 100% входящего потока и нормативный "
+    "пятиминутный процент для выбранного типа здания."
+)
+
+
+def is_gost_scenario(value: TrafficScenarioType | str) -> bool:
+    """Распознаёт сценарий ГОСТ без обращения к новому члену enum.
+
+    Это сохраняет работу страницы при частичном горячем обновлении Streamlit,
+    когда модуль с перечислением ещё остался в памяти от предыдущей версии.
+    """
+
+    return getattr(value, "value", value) == GOST_SCENARIO_LABEL
 
 
 def update_shares_from_incoming() -> None:
@@ -83,10 +99,15 @@ def apply_selected_scenario_profile() -> None:
     """Подставляет стартовые параметры после смены типового сценария."""
 
     selected = st.session_state[SCENARIO_TYPE_KEY]
-    if not isinstance(selected, TrafficScenarioType):
-        selected = TrafficScenarioType(selected)
+    profile_type = (
+        TrafficScenarioType.UP_PEAK
+        if is_gost_scenario(selected)
+        else selected
+    )
+    if not isinstance(profile_type, TrafficScenarioType):
+        profile_type = TrafficScenarioType(profile_type)
     preset = traffic_profile_preset(
-        selected,
+        profile_type,
         project.building.building_type,
         float(st.session_state[POPULATION_PERCENT_KEY]),
     )
@@ -96,7 +117,7 @@ def apply_selected_scenario_profile() -> None:
     st.session_state[DIRECTION_PERCENT_KEYS[1]] = preset.outgoing_percent
     st.session_state[DIRECTION_PERCENT_KEYS[2]] = preset.interfloor_percent
     st.session_state[POPULATION_PERCENT_KEY] = preset.population_percent_5min
-    if selected is TrafficScenarioType.GOST:
+    if is_gost_scenario(selected):
         st.session_state[ARRIVAL_DISTRIBUTION_KEY] = ArrivalDistribution.POISSON
         st.session_state[RANDOM_BURSTS_KEY] = False
 
@@ -109,6 +130,7 @@ parking_floors = [floor for floor in project.floors if floor.is_parking]
 
 scenario_signature = (
     scenario.id,
+    scenario.name,
     scenario.scenario_type.value,
     scenario.population_percent_5min,
     scenario.incoming_share,
@@ -137,7 +159,11 @@ if (
     st.session_state[POPULATION_PERCENT_KEY] = float(
         scenario.population_percent_5min
     )
-    st.session_state[SCENARIO_TYPE_KEY] = scenario.scenario_type
+    st.session_state[SCENARIO_TYPE_KEY] = (
+        GOST_SCENARIO_LABEL
+        if scenario.name == GOST_SCENARIO_LABEL
+        else scenario.scenario_type
+    )
     st.session_state[ARRIVAL_DISTRIBUTION_KEY] = scenario.arrival_distribution
     st.session_state[RANDOM_BURSTS_KEY] = scenario.random_bursts
     st.session_state.traffic_direction_scenario_signature = scenario_signature
@@ -149,7 +175,16 @@ st.session_state.setdefault(
     POPULATION_PERCENT_KEY,
     float(scenario.population_percent_5min),
 )
-st.session_state.setdefault(SCENARIO_TYPE_KEY, scenario.scenario_type)
+st.session_state.setdefault(
+    SCENARIO_TYPE_KEY,
+    (
+        GOST_SCENARIO_LABEL
+        if scenario.name == GOST_SCENARIO_LABEL
+        else scenario.scenario_type
+    ),
+)
+if is_gost_scenario(st.session_state[SCENARIO_TYPE_KEY]):
+    st.session_state[SCENARIO_TYPE_KEY] = GOST_SCENARIO_LABEL
 st.session_state.setdefault(
     ARRIVAL_DISTRIBUTION_KEY,
     scenario.arrival_distribution,
@@ -159,11 +194,18 @@ st.session_state.setdefault(RANDOM_BURSTS_KEY, scenario.random_bursts)
 with st.container(border=True):
     left, right = st.columns(2)
     with left:
-        types = list(TrafficScenarioType)
+        types = [
+            GOST_SCENARIO_LABEL,
+            *[
+                item
+                for item in TrafficScenarioType
+                if not is_gost_scenario(item)
+            ],
+        ]
         scenario_type = st.selectbox(
             "Тип сценария",
             types,
-            format_func=lambda value: value.value,
+            format_func=lambda value: getattr(value, "value", value),
             key=SCENARIO_TYPE_KEY,
             on_change=apply_selected_scenario_profile,
             help=(
@@ -171,8 +213,12 @@ with st.container(border=True):
                 "подставляет рекомендуемые доли направлений и пятиминутный процент."
             ),
         )
-        st.caption(traffic_profile_description(scenario_type))
-        gost_scenario_selected = scenario_type is TrafficScenarioType.GOST
+        gost_scenario_selected = is_gost_scenario(scenario_type)
+        st.caption(
+            GOST_SCENARIO_DESCRIPTION
+            if gost_scenario_selected
+            else traffic_profile_description(scenario_type)
+        )
         if gost_scenario_selected:
             st.caption(
                 "Нормативные параметры установлены автоматически и защищены от "
@@ -327,11 +373,20 @@ with st.container(border=True):
 
 if submitted:
     try:
+        stored_scenario_type = (
+            TrafficScenarioType.UP_PEAK
+            if gost_scenario_selected
+            else scenario_type
+        )
         updated = TrafficScenario(
             **{
                 **scenario.model_dump(),
-                "name": scenario_type.value,
-                "scenario_type": scenario_type,
+                "name": (
+                    GOST_SCENARIO_LABEL
+                    if gost_scenario_selected
+                    else scenario_type.value
+                ),
+                "scenario_type": stored_scenario_type,
                 "arrival_distribution": distribution,
                 "five_minute_passengers": None,
                 "population_percent_5min": float(population_percent),

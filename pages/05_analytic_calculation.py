@@ -65,6 +65,10 @@ def _project_for_gost(project, *, include_parking: bool):
         current_scenario,
         normative_project.building.building_type,
     )
+    if current_scenario.name == "По ГОСТ":
+        normative_scenario = normative_scenario.model_copy(
+            update={"name": "По ГОСТ"}
+        )
     if not include_parking:
         normative_scenario = normative_scenario.model_copy(
             update={"parking_incoming_share": 0.0}

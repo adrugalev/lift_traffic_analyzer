@@ -38,7 +38,7 @@ def test_custom_profile_preserves_user_parameters() -> None:
 
 def test_gost_profile_uses_locked_normative_directions_and_percentage() -> None:
     preset = traffic_profile_preset(
-        TrafficScenarioType.GOST,
+        TrafficScenarioType.UP_PEAK,
         BuildingType.RESIDENTIAL,
         current_population_percent=9.0,
     )

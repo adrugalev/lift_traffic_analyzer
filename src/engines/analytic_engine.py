@@ -530,10 +530,7 @@ class AnalyticEngine:
         criteria = criteria_by_type[building_type.value]
 
         scope_errors: list[str] = []
-        if scenario.scenario_type not in {
-            TrafficScenarioType.UP_PEAK,
-            TrafficScenarioType.GOST,
-        }:
+        if scenario.scenario_type is not TrafficScenarioType.UP_PEAK:
             scope_errors.append("выбран не восходящий пиковый пассажиропоток")
         if not (
             math.isclose(scenario.incoming_share, 1.0, abs_tol=1e-9)

@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class TrafficScenarioType(StrEnum):
     """Тип расчётного пассажиропотока."""
 
-    GOST = "По ГОСТ"
     UP_PEAK = "Утренний восходящий пик"
     DOWN_PEAK = "Вечерний нисходящий пик"
     LUNCH = "Обеденный поток"
