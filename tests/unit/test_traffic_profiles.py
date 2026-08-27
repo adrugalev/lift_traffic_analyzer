@@ -52,7 +52,7 @@ def test_gost_profile_uses_locked_normative_directions_and_percentage() -> None:
     assert preset.population_percent_5min == 6.0
 
 
-def test_residential_building_gets_residential_morning_scenario() -> None:
+def test_residential_building_gets_gost_scenario_by_default() -> None:
     scenario = scenario_for_building(
         TrafficScenario(),
         BuildingType.RESIDENTIAL,
@@ -62,13 +62,15 @@ def test_residential_building_gets_residential_morning_scenario() -> None:
         default_scenario_type(BuildingType.RESIDENTIAL)
         is TrafficScenarioType.RESIDENTIAL_MORNING
     )
-    assert scenario.scenario_type is TrafficScenarioType.RESIDENTIAL_MORNING
+    assert scenario.name == "По ГОСТ"
+    assert scenario.scenario_type is TrafficScenarioType.UP_PEAK
     assert (
         scenario.incoming_share,
         scenario.outgoing_share,
         scenario.interfloor_share,
-    ) == (0.10, 0.80, 0.10)
+    ) == (1.0, 0.0, 0.0)
     assert scenario.population_percent_5min == 6.0
+    assert scenario.random_bursts is False
 
 
 def test_gost_calculation_uses_normative_up_peak_scenario() -> None:

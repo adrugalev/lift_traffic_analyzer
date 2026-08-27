@@ -5,6 +5,20 @@ from src.models.traffic import TrafficScenarioType
 from src.services.project_service import ProjectService
 
 
+def test_application_default_uses_gost_scenario() -> None:
+    project = ProjectService.create_application_default()
+    scenario = project.scenario()
+
+    assert scenario.name == "По ГОСТ"
+    assert scenario.scenario_type is TrafficScenarioType.UP_PEAK
+    assert scenario.population_percent_5min == 6.0
+    assert (scenario.incoming_share, scenario.outgoing_share, scenario.interfloor_share) == (
+        1.0,
+        0.0,
+        0.0,
+    )
+
+
 def test_create_test_project_fills_all_calculation_sections() -> None:
     project = ProjectService.create_test_project(
         elevator_count=4,
@@ -23,11 +37,9 @@ def test_create_test_project_fills_all_calculation_sections() -> None:
         for floor in project.floors
     )
     assert project.scenario().population_percent_5min == 6.0
-    assert project.scenario().random_bursts is True
-    assert (
-        project.scenario().scenario_type
-        is TrafficScenarioType.RESIDENTIAL_MORNING
-    )
+    assert project.scenario().random_bursts is False
+    assert project.scenario().name == "По ГОСТ"
+    assert project.scenario().scenario_type is TrafficScenarioType.UP_PEAK
     elevator = project.elevator_groups[0].elevators[0]
     assert elevator.door_opening_type is DoorOpeningType.TELESCOPIC
     assert elevator.door_width_m == 0.9

@@ -79,7 +79,7 @@ with st.form("project_form"):
         type="primary",
         help=(
             "Сохраняет общие сведения. При изменении типа здания автоматически "
-            "подбирается соответствующий типовой сценарий пассажиропотока."
+            "устанавливается нормативный сценарий «По ГОСТ»."
         ),
     )
 
@@ -107,7 +107,7 @@ if submitted:
     if building_type_changed:
         st.success(
             "Сведения сохранены. Для выбранного типа здания установлен сценарий "
-            f"«{candidate.scenario().scenario_type.value}»."
+            f"«{candidate.scenario().name}»."
         )
     else:
         st.success("Сведения сохранены.")

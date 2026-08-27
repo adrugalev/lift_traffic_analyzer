@@ -2,6 +2,6 @@
 
 APP_NAME = "Расчёт пассажиропотока"
 APP_SUBTITLE = "Расчёт по ГОСТ и симуляция пассажиропотока"
-VERSION_NUMBER = "62"
+VERSION_NUMBER = "63"
 VERSION_DATE = "27.08.2026"
 __version__ = f"{VERSION_NUMBER}_{VERSION_DATE}"

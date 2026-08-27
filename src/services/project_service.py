@@ -122,7 +122,7 @@ class ProjectService:
 
     @classmethod
     def create_application_default(cls, floors_count: int = 10) -> Project:
-        """Создаёт стартовый проект с профильным сценарием жилого здания."""
+        """Создаёт стартовый проект с нормативным сценарием «По ГОСТ»."""
 
         project = cls.create_default(floors_count=floors_count)
         project.traffic_scenarios[0] = scenario_for_building(

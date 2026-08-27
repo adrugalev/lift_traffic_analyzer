@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.models.building import BuildingType
-from src.models.traffic import TrafficScenario, TrafficScenarioType
+from src.models.traffic import (
+    ArrivalDistribution,
+    TrafficScenario,
+    TrafficScenarioType,
+)
 from src.services.configuration_service import ConfigurationService
 
 
@@ -95,18 +99,20 @@ def scenario_for_building(
     scenario: TrafficScenario,
     building_type: BuildingType,
 ) -> TrafficScenario:
-    """Переключает активный сценарий на стартовый профиль выбранного здания."""
+    """Устанавливает стартовый нормативный сценарий для выбранного здания."""
 
-    scenario_type = default_scenario_type(building_type)
+    scenario_type = TrafficScenarioType.UP_PEAK
     preset = traffic_profile_preset(
         scenario_type,
         building_type,
         scenario.population_percent_5min,
     )
     updates: dict[str, object] = {
-        "name": scenario_type.value,
+        "name": "По ГОСТ",
         "scenario_type": scenario_type,
         "five_minute_passengers": None,
+        "arrival_distribution": ArrivalDistribution.POISSON,
+        "random_bursts": False,
     }
     if preset is not None:
         updates.update(
