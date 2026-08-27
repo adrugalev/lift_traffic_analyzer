@@ -5,7 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.models.traffic import ArrivalDistribution, TrafficScenario, TrafficScenarioType
-from src.ui import configure_page, ensure_session, enum_index, update_project
+from src.ui import configure_page, ensure_session, update_project
 from src.utils.traffic_profiles import (
     traffic_profile_description,
     traffic_profile_preset,
@@ -54,6 +54,8 @@ DIRECTION_PERCENT_KEYS = (
 PARKING_PERCENT_KEY = "traffic_parking_incoming_percent"
 POPULATION_PERCENT_KEY = "traffic_population_percent_5min"
 SCENARIO_TYPE_KEY = "traffic_scenario_type"
+ARRIVAL_DISTRIBUTION_KEY = "traffic_arrival_distribution"
+RANDOM_BURSTS_KEY = "traffic_random_bursts"
 
 
 def update_shares_from_incoming() -> None:
@@ -94,6 +96,9 @@ def apply_selected_scenario_profile() -> None:
     st.session_state[DIRECTION_PERCENT_KEYS[1]] = preset.outgoing_percent
     st.session_state[DIRECTION_PERCENT_KEYS[2]] = preset.interfloor_percent
     st.session_state[POPULATION_PERCENT_KEY] = preset.population_percent_5min
+    if selected is TrafficScenarioType.GOST:
+        st.session_state[ARRIVAL_DISTRIBUTION_KEY] = ArrivalDistribution.POISSON
+        st.session_state[RANDOM_BURSTS_KEY] = False
 
 
 configure_page("Пассажиропоток")
@@ -133,6 +138,8 @@ if (
         scenario.population_percent_5min
     )
     st.session_state[SCENARIO_TYPE_KEY] = scenario.scenario_type
+    st.session_state[ARRIVAL_DISTRIBUTION_KEY] = scenario.arrival_distribution
+    st.session_state[RANDOM_BURSTS_KEY] = scenario.random_bursts
     st.session_state.traffic_direction_scenario_signature = scenario_signature
 st.session_state.setdefault(
     PARKING_PERCENT_KEY,
@@ -143,6 +150,11 @@ st.session_state.setdefault(
     float(scenario.population_percent_5min),
 )
 st.session_state.setdefault(SCENARIO_TYPE_KEY, scenario.scenario_type)
+st.session_state.setdefault(
+    ARRIVAL_DISTRIBUTION_KEY,
+    scenario.arrival_distribution,
+)
+st.session_state.setdefault(RANDOM_BURSTS_KEY, scenario.random_bursts)
 
 with st.container(border=True):
     left, right = st.columns(2)
@@ -160,12 +172,19 @@ with st.container(border=True):
             ),
         )
         st.caption(traffic_profile_description(scenario_type))
+        gost_scenario_selected = scenario_type is TrafficScenarioType.GOST
+        if gost_scenario_selected:
+            st.caption(
+                "Нормативные параметры установлены автоматически и защищены от "
+                "редактирования. Для ручной настройки выберите другой тип сценария."
+            )
         distributions = list(ArrivalDistribution)
         distribution = st.selectbox(
             "Распределение поступления",
             distributions,
-            index=enum_index(distributions, scenario.arrival_distribution),
             format_func=lambda value: value.value,
+            key=ARRIVAL_DISTRIBUTION_KEY,
+            disabled=gost_scenario_selected,
             help=(
                 "Математическая модель моментов появления пассажиров. Она влияет "
                 "на очереди и ожидание в симуляции, но не меняет расчётные формулы ГОСТ."
@@ -178,6 +197,7 @@ with st.container(border=True):
             min_value=0.0,
             step=1.0,
             key=POPULATION_PERCENT_KEY,
+            disabled=gost_scenario_selected,
             help=(
                 "Доля суммарного населения здания, создающая поездки за пять минут. "
                 "По этому значению автоматически рассчитывается число пассажиров."
@@ -185,7 +205,8 @@ with st.container(border=True):
         )
         random_bursts = st.checkbox(
             "Учитывать всплески",
-            scenario.random_bursts,
+            key=RANDOM_BURSTS_KEY,
+            disabled=gost_scenario_selected,
             help=(
                 "Добавляет к пуассоновскому потоку случайные кратковременные "
                 "поступления пассажиров для нагрузочной проверки."
@@ -202,6 +223,7 @@ with st.container(border=True):
         format="%d%%",
         key=DIRECTION_PERCENT_KEYS[0],
         on_change=update_shares_from_incoming,
+        disabled=gost_scenario_selected,
         help=(
             "Доля поездок от основного входа или паркинга к верхним этажам. "
             "При изменении исходящий поток пересчитывается автоматически."
@@ -229,7 +251,7 @@ with st.container(border=True):
         format="%d%%",
         key=DIRECTION_PERCENT_KEYS[2],
         on_change=update_shares_from_interfloor,
-        disabled=maximum_interfloor == 0,
+        disabled=gost_scenario_selected or maximum_interfloor == 0,
         help=(
             "Доля поездок между этажами без выхода из здания. При её изменении "
             "входящий поток сохраняется, а исходящий пересчитывается."
@@ -308,6 +330,7 @@ if submitted:
         updated = TrafficScenario(
             **{
                 **scenario.model_dump(),
+                "name": scenario_type.value,
                 "scenario_type": scenario_type,
                 "arrival_distribution": distribution,
                 "five_minute_passengers": None,

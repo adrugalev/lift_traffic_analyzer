@@ -36,6 +36,22 @@ def test_custom_profile_preserves_user_parameters() -> None:
     )
 
 
+def test_gost_profile_uses_locked_normative_directions_and_percentage() -> None:
+    preset = traffic_profile_preset(
+        TrafficScenarioType.GOST,
+        BuildingType.RESIDENTIAL,
+        current_population_percent=9.0,
+    )
+
+    assert preset is not None
+    assert (
+        preset.incoming_percent,
+        preset.outgoing_percent,
+        preset.interfloor_percent,
+    ) == (100, 0, 0)
+    assert preset.population_percent_5min == 6.0
+
+
 def test_residential_building_gets_residential_morning_scenario() -> None:
     scenario = scenario_for_building(
         TrafficScenario(),
