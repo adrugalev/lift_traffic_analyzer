@@ -34,17 +34,12 @@ class _NavigationStreamlit:
         self.session_state = _SessionState()
         self.markdown_values: list[str] = []
         self.button_labels: list[str] = []
-        self.download_labels: list[str] = []
 
     def markdown(self, value: str, **_kwargs) -> None:
         self.markdown_values.append(value)
 
     def button(self, label: str, **_kwargs) -> bool:
         self.button_labels.append(label)
-        return False
-
-    def download_button(self, label: str, **_kwargs) -> bool:
-        self.download_labels.append(label)
         return False
 
     def success(self, _text: str) -> None:
@@ -127,7 +122,6 @@ def test_additional_navigation_is_hidden_by_default(monkeypatch) -> None:
         f"Версия {ui.VERSION_NUMBER} от {ui.VERSION_DATE}"
     )
     assert "ДОПОЛНИТЕЛЬНО" in branding
-    assert streamlit.download_labels == ["Скачать ГОСТ 34758-2021 (PDF)"]
 
 
 def test_additional_navigation_is_shown_by_checkbox(monkeypatch) -> None:

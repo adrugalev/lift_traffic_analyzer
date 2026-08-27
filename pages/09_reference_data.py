@@ -18,6 +18,7 @@ from src.reference_guide import (
     formula_symbol_html,
 )
 from src.services.configuration_service import ConfigurationService
+from src.standard_document import GOST_DOCUMENT_FILENAME, gost_document_bytes
 from src.ui import configure_page, ensure_session
 
 
@@ -274,6 +275,17 @@ with criteria_tab:
     st.markdown(
         "[Официальная карточка ГОСТ 34758-2021 в Росстандарте]"
         f"({normative['source']['official_card']})"
+    )
+    st.download_button(
+        "Скачать ГОСТ 34758-2021 (PDF)",
+        data=gost_document_bytes(),
+        file_name=GOST_DOCUMENT_FILENAME,
+        mime="application/pdf",
+        key="gost_sidebar_download",
+        icon=":material/download:",
+        type="tertiary",
+        width=320,
+        help="Скачать используемый в расчётах нормативный документ.",
     )
     st.header("Критерии для оценки лифтовой группы")
     criteria_rows = []

@@ -121,14 +121,17 @@ column_config = {
             width=90,
             help="Наименование лифта",
         ),
-        "Г/п, кг": st.column_config.TextColumn(
+        "Г/п, кг": st.column_config.NumberColumn(
             "Г/п, кг",
             width=72,
             help=(
                 "Номинальная грузоподъёмность. В расчёте по ГОСТ номинальная "
                 "вместимость проверяется как грузоподъёмность, делённая на 75 кг. "
-                "Допустимы запятая и точка."
+                "Указывается целым числом."
             ),
+            min_value=1,
+            step=1,
+            format="%d",
         ),
         "Номинал, пасс.": st.column_config.NumberColumn(
             "Пасс.",
@@ -236,62 +239,17 @@ column_config = {
         ),
     }
 
-main_columns = [
-    "Наименование",
-    "Г/п, кг",
-    "Номинал, пасс.",
-    "Заполнение, %",
-    "Скорость, м/с",
-    "Ускорение, м/с²",
-    "Замедление, м/с²",
-    "Рывок, м/с³",
-    "МГН",
-]
-door_columns = [
-    "Наименование",
-    "Дверь, м",
-    "Тип дверей",
-    "Открытие, с",
-    "Закрытие, с",
-    "Предв. открытие, с",
-    "Задержка, с",
-    "Задержка пуска, с",
-    "Посадка, с/пасс.",
-    "Высадка, с/пасс.",
-    "Остановки",
-]
-
-st.markdown("**Основные характеристики и движение**")
-edited_main = st.data_editor(
-    display_frame[main_columns],
-    key=f"elevators_main_editor_{editor_revision}",
+edited = st.data_editor(
+    display_frame,
+    key=f"elevators_editor_{editor_revision}",
     num_rows="fixed",
     width="stretch",
     height="auto",
     row_height=26,
     hide_index=True,
-    column_config={column: column_config[column] for column in main_columns},
+    disabled=["Остановки"],
+    column_config=column_config,
 )
-
-st.markdown("**Двери и пассажирообмен**")
-edited_doors = st.data_editor(
-    display_frame[door_columns],
-    key=f"elevators_doors_editor_{editor_revision}",
-    num_rows="fixed",
-    width="stretch",
-    height="auto",
-    row_height=26,
-    hide_index=True,
-    disabled=["Наименование", "Остановки"],
-    column_config={column: column_config[column] for column in door_columns},
-)
-
-edited = display_frame.copy()
-for column in main_columns:
-    edited[column] = edited_main[column].to_numpy()
-for column in door_columns:
-    if column != "Наименование":
-        edited[column] = edited_doors[column].to_numpy()
 try:
     normalized_edited = normalize_elevator_editor_frame(
         edited, existing_elevators, stops_count

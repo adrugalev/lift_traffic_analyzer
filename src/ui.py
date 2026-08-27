@@ -13,7 +13,6 @@ from src.models.project import Project
 from src.models.results import DiagnosticMessage, MessageSeverity
 from src.services.configuration_service import ConfigurationService
 from src.services.project_service import ProjectService
-from src.standard_document import GOST_DOCUMENT_FILENAME, gost_document_bytes
 
 
 NAVIGATION = (
@@ -166,17 +165,6 @@ def render_navigation() -> None:
                 icon=":material/library_books:",
                 use_container_width=True,
             )
-        st.download_button(
-            "Скачать ГОСТ 34758-2021 (PDF)",
-            data=gost_document_bytes(),
-            file_name=GOST_DOCUMENT_FILENAME,
-            mime="application/pdf",
-            key="gost_sidebar_download",
-            icon=":material/download:",
-            type="tertiary",
-            width="stretch",
-            help="Скачать используемый в расчётах нормативный документ.",
-        )
 
 
 def configure_page(title: str, icon: str = "↕️") -> None:
@@ -247,7 +235,7 @@ def configure_page(title: str, icon: str = "↕️") -> None:
             letter-spacing: 0.06em;
         }
         .st-key-gost_sidebar_download {
-            margin-top: 0.15rem;
+            margin: 0.3rem 0 0.8rem;
         }
         .st-key-gost_sidebar_download button,
         .st-key-gost_sidebar_download button:hover,
@@ -260,12 +248,16 @@ def configure_page(title: str, icon: str = "↕️") -> None:
             background: rgba(151, 166, 195, 0.15) !important;
             box-shadow: none !important;
             justify-content: flex-start !important;
+            gap: 8px !important;
             color: #31333f !important;
         }
         .st-key-gost_sidebar_download button p {
             font-size: 14px !important;
             font-weight: 600 !important;
             line-height: 28px !important;
+        }
+        .st-key-gost_sidebar_download button > div > span {
+            gap: 8px !important;
         }
         </style>
         """,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from src.models.elevator import Elevator
 from src.utils.elevator_editor import (
@@ -68,3 +69,12 @@ def test_decimal_parameters_accept_comma_or_dot() -> None:
 
     assert normalized.iloc[0]["Скорость, м/с"] == 2.5
     assert normalized.iloc[0]["Ускорение, м/с²"] == 0.8
+
+
+def test_capacity_must_be_an_integer() -> None:
+    elevator = Elevator(name="Лифт A1")
+    row = elevator_to_editor_row(elevator)
+    row["Г/п, кг"] = "1000,5"
+
+    with pytest.raises(ValueError, match="целым числом"):
+        normalize_elevator_editor_frame(pd.DataFrame([row]), [elevator], 12)

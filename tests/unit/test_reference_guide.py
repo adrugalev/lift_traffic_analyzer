@@ -123,6 +123,6 @@ def test_reference_page_hides_internal_configurations() -> None:
     assert "height=ARRIVAL_MODEL_CARD_HEIGHT" in page_text
     assert 'class="formula-symbol-table"' in page_text
     assert "formula_symbol_html(symbol)" in page_text
-    assert '"Скачать ГОСТ"' not in page_text
-    assert "download_button" not in page_text
+    assert '"Скачать ГОСТ 34758-2021 (PDF)"' in page_text
+    assert "download_button" in page_text
     assert "Официальная карточка ГОСТ 34758-2021 в Росстандарте" in page_text

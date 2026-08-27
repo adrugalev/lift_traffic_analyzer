@@ -34,7 +34,6 @@ ELEVATOR_EDITOR_COLUMNS = (
 )
 
 ELEVATOR_DECIMAL_COLUMNS = (
-    "Г/п, кг",
     "Скорость, м/с",
     "Ускорение, м/с²",
     "Замедление, м/с²",
@@ -139,6 +138,10 @@ def normalize_elevator_editor_frame(
                 )
         for column in ELEVATOR_DECIMAL_COLUMNS:
             record[column] = parse_decimal(record[column])
+        capacity_kg = parse_decimal(record["Г/п, кг"])
+        if not capacity_kg.is_integer():
+            raise ValueError("Грузоподъёмность должна быть указана целым числом.")
+        record["Г/п, кг"] = int(capacity_kg)
         record["Остановки"] = stops_count
         name = str(record.get("Наименование") or "").strip()
         if name:
