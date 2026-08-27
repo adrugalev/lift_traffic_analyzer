@@ -20,10 +20,14 @@ from src.utils.file_utils import safe_filename
 from src.utils.traffic_profiles import scenario_for_gost_calculation
 
 
-def _generate_gost_exports(project, result) -> list[str]:
+def _generate_gost_exports(project, result, *, include_parking: bool) -> list[str]:
     """Независимо формирует DOCX и PDF нормативного отчёта."""
 
-    for key in ("gost_report_docx", "gost_report_pdf"):
+    for key in (
+        "gost_report_docx",
+        "gost_report_pdf",
+        "gost_report_include_parking",
+    ):
         st.session_state.pop(key, None)
     errors: list[str] = []
     try:
@@ -34,7 +38,43 @@ def _generate_gost_exports(project, result) -> list[str]:
         st.session_state.gost_report_pdf = build_gost_pdf_report(project, result)
     except Exception as exc:
         errors.append(f"PDF: {exc}")
+    st.session_state.gost_report_include_parking = include_parking
     return errors
+
+
+def _project_for_gost(project, *, include_parking: bool):
+    """Готовит копию проекта для нормативного сценария, не меняя исходник."""
+
+    normative_project = project.model_copy(deep=True)
+    current_scenario = normative_project.scenario()
+    normative_scenario = scenario_for_gost_calculation(
+        current_scenario,
+        normative_project.building.building_type,
+    )
+    if not include_parking:
+        normative_scenario = normative_scenario.model_copy(
+            update={"parking_incoming_share": 0.0}
+        )
+    scenario_index = next(
+        index
+        for index, scenario in enumerate(normative_project.traffic_scenarios)
+        if scenario.id == current_scenario.id
+    )
+    normative_project.traffic_scenarios[scenario_index] = normative_scenario
+    return normative_project
+
+
+def _parking_is_configured(project, group_id: str | None = None) -> bool:
+    """Проверяет наличие уровней и заданного пассажиропотока с паркинга."""
+
+    return bool(
+        any(
+            floor.is_parking
+            and (group_id is None or group_id in floor.served_by_group_ids)
+            for floor in project.floors
+        )
+        and project.scenario().parking_incoming_share > 0
+    )
 
 
 configure_page("Расчёт и отчёт")
@@ -67,6 +107,9 @@ st.markdown(
     .st-key-analytic_metric_cards [data-testid="stMetricValue"] > div {
         font-size: clamp(1.45rem, 2.2vw, 2rem) !important;
         line-height: 1.15 !important;
+    }
+    .st-key-all_metrics_table [data-testid="stDataFrame"] {
+        font-size: 0.78rem !important;
     }
     </style>
     """,
@@ -122,30 +165,25 @@ if preview_clicked:
         st.error(str(exc))
 if normative_clicked:
     try:
-        normative_project = project.model_copy(deep=True)
-        current_scenario = normative_project.scenario()
-        normative_scenario = scenario_for_gost_calculation(
-            current_scenario,
-            normative_project.building.building_type,
-        )
-        scenario_index = next(
-            index
-            for index, scenario in enumerate(normative_project.traffic_scenarios)
-            if scenario.id == current_scenario.id
-        )
-        normative_project.traffic_scenarios[scenario_index] = normative_scenario
-        result = engine.calculate_normative(normative_project, group.id)
+        normative_project = _project_for_gost(project, include_parking=True)
+        strict_gost_project = _project_for_gost(project, include_parking=False)
+        result = engine.calculate_normative(strict_gost_project, group.id)
         result.recommendations = RecommendationEngine.generate(result)
+        parking_reference_result = None
+        if _parking_is_configured(normative_project, group.id):
+            parking_reference_result = engine.calculate_normative(
+                normative_project,
+                group.id,
+            )
+            parking_reference_result.recommendations = RecommendationEngine.generate(
+                parking_reference_result
+            )
         update_project(normative_project)
         st.session_state.analytic_result = result
-        with st.spinner("Подготавливается отчёт по ГОСТ…"):
-            gost_export_errors = _generate_gost_exports(normative_project, result)
-        st.success("Расчёт по ГОСТ выполнен.")
-        if gost_export_errors:
-            st.error(
-                "Не удалось подготовить отдельные форматы отчёта: "
-                + "; ".join(gost_export_errors)
-            )
+        st.session_state.gost_project_without_parking = strict_gost_project
+        st.session_state.gost_project_with_parking = normative_project
+        st.session_state.parking_reference_result = parking_reference_result
+        st.success("Расчёт по ГОСТ выполнен без учёта паркинга.")
     except NormativeConfigurationError as exc:
         st.error(str(exc))
     except Exception as exc:
@@ -153,8 +191,30 @@ if normative_clicked:
 
 result = st.session_state.analytic_result
 if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
-    with methods[1]:
-        st.caption("Отчёт по результатам нормативного расчёта")
+    st.subheader("Отчёт по результатам расчёта")
+    parking_configured = _parking_is_configured(project, group.id)
+    if not parking_configured:
+        st.session_state.include_parking_in_gost_report = False
+    report_controls = st.columns([1, 1])
+    with report_controls[0]:
+        include_parking_in_report = st.checkbox(
+            "Включать в расчёт паркинг",
+            value=False,
+            key="include_parking_in_gost_report",
+            disabled=not parking_configured,
+            help=(
+                "По умолчанию отчёт формируется строго по ГОСТ без паркинга. "
+                "При включении применяется справочная инженерная поправка: "
+                "каждый круговой рейс считается с заходом на паркинг."
+            ),
+        )
+    stored_report_mode = st.session_state.get("gost_report_include_parking")
+    report_mode_matches = (
+        stored_report_mode == include_parking_in_report
+        if stored_report_mode is not None
+        else not parking_configured
+    )
+    with report_controls[1]:
         available_gost_reports = [
             ("DOCX", st.session_state.get("gost_report_docx")),
             ("PDF", st.session_state.get("gost_report_pdf")),
@@ -162,15 +222,44 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
         available_gost_reports = [
             (kind, data) for kind, data in available_gost_reports if data is not None
         ]
+        if not report_mode_matches:
+            available_gost_reports = []
         if not available_gost_reports:
             if st.button(
-                "Подготовить отчёт по ГОСТ",
+                "Сформировать отчёт по ГОСТ",
                 key="prepare_gost_report",
                 use_container_width=True,
-                help="Формирует DOCX и PDF по результатам сохранённого расчёта.",
+                help=(
+                    "Формирует DOCX и PDF без паркинга, если расположенная рядом "
+                    "галочка не установлена."
+                ),
             ):
+                report_project = st.session_state.get(
+                    "gost_project_with_parking"
+                    if include_parking_in_report
+                    else "gost_project_without_parking"
+                )
+                report_result = (
+                    st.session_state.get("parking_reference_result")
+                    if include_parking_in_report
+                    else result
+                )
+                if report_project is None:
+                    report_project = _project_for_gost(
+                        project,
+                        include_parking=include_parking_in_report,
+                    )
+                if report_result is None:
+                    report_result = engine.calculate_normative(
+                        report_project,
+                        group.id,
+                    )
                 with st.spinner("Подготавливается отчёт по ГОСТ…"):
-                    gost_export_errors = _generate_gost_exports(project, result)
+                    gost_export_errors = _generate_gost_exports(
+                        report_project,
+                        report_result,
+                        include_parking=include_parking_in_report,
+                    )
                 if gost_export_errors:
                     st.error(
                         "Не удалось подготовить отдельные форматы отчёта: "
@@ -235,9 +324,33 @@ if result:
             )
     if result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
         st.caption(
-            "Статусы рассчитаны по критериям ГОСТ 34758-2021. "
+            "Основные показатели и статусы рассчитаны по ГОСТ 34758-2021 "
+            "без учёта паркинга. "
             "Ориентировочное время ожидания нормативно не оценивается."
         )
+        parking_reference_result = st.session_state.get(
+            "parking_reference_result"
+        )
+        if parking_reference_result is not None:
+            st.markdown("**Справочная оценка влияния паркинга**")
+            st.caption(
+                "Не является расчётом по ГОСТ и не влияет на показанные выше "
+                "нормативные статусы. Применено консервативное допущение: каждый "
+                "круговой рейс включает заход на паркинг."
+            )
+            reference_columns = st.columns(3)
+            reference_columns[0].metric(
+                "Добавка к круговому рейсу",
+                f"{parking_reference_result.metric('parking_round_trip_addition').value:.1f} с",
+            )
+            reference_columns[1].metric(
+                "Интервал с паркингом",
+                f"{parking_reference_result.metric('interval').value:.1f} с",
+            )
+            reference_columns[2].metric(
+                "Провозная способность с паркингом",
+                f"{parking_reference_result.metric('handling_capacity_5min').value:.1f} пасс.",
+            )
     else:
         st.caption(
             "Предварительный результат для выбранного сценария. "
@@ -246,45 +359,69 @@ if result:
 
     tabs = st.tabs(["Все показатели", "Формулы", "Сообщения", "Рекомендации", "Аудит"])
     with tabs[0]:
-        st.dataframe(
-            pd.DataFrame([metric.model_dump(mode="json") for metric in result.metrics]),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "key": st.column_config.TextColumn(
-                    "Код",
-                    help="Внутренний неизменяемый идентификатор показателя.",
-                ),
-                "title_ru": st.column_config.TextColumn(
-                    "Показатель",
-                    help="Наименование расчётного или справочного показателя.",
-                ),
-                "value": st.column_config.NumberColumn(
-                    "Значение",
-                    help="Рассчитанное числовое значение до форматирования.",
-                ),
-                "unit": st.column_config.TextColumn(
-                    "Единица",
-                    help="Единица измерения рассчитанного значения.",
-                ),
-                "method": st.column_config.TextColumn(
-                    "Метод",
-                    help="Расчётный метод или источник показателя.",
-                ),
-                "compliance": st.column_config.TextColumn(
-                    "Соответствие",
-                    help="Результат сравнения с применимым нормативным критерием.",
-                ),
-                "target_value": st.column_config.NumberColumn(
-                    "Целевое значение",
-                    help="Числовая граница критерия, если она однозначно задана.",
-                ),
-                "target_description": st.column_config.TextColumn(
-                    "Критерий",
-                    help="Условие, с которым сравнивается расчётное значение.",
-                ),
-            },
+        metrics_frame = pd.DataFrame(
+            [metric.model_dump(mode="json") for metric in result.metrics]
         )
+        with st.container(key="all_metrics_table"):
+            st.dataframe(
+                metrics_frame,
+                width="stretch",
+                height=min(600, 36 + len(metrics_frame) * 29),
+                row_height=28,
+                hide_index=True,
+                column_order=(
+                    "key",
+                    "title_ru",
+                    "value",
+                    "unit",
+                    "method",
+                    "compliance",
+                    "target_value",
+                    "target_description",
+                ),
+                column_config={
+                    "key": st.column_config.TextColumn(
+                        "Код",
+                        width=135,
+                        help="Внутренний неизменяемый идентификатор показателя.",
+                    ),
+                    "title_ru": st.column_config.TextColumn(
+                        "Показатель",
+                        width=300,
+                        help="Наименование расчётного или справочного показателя.",
+                    ),
+                    "value": st.column_config.NumberColumn(
+                        "Значение",
+                        width=75,
+                        help="Рассчитанное числовое значение до форматирования.",
+                    ),
+                    "unit": st.column_config.TextColumn(
+                        "Единица",
+                        width=80,
+                        help="Единица измерения рассчитанного значения.",
+                    ),
+                    "method": st.column_config.TextColumn(
+                        "Метод",
+                        width=120,
+                        help="Расчётный метод или источник показателя.",
+                    ),
+                    "compliance": st.column_config.TextColumn(
+                        "Соответствие",
+                        width=110,
+                        help="Результат сравнения с применимым нормативным критерием.",
+                    ),
+                    "target_value": st.column_config.NumberColumn(
+                        "Целевое значение",
+                        width=105,
+                        help="Числовая граница критерия, если она однозначно задана.",
+                    ),
+                    "target_description": st.column_config.TextColumn(
+                        "Критерий",
+                        width=220,
+                        help="Условие, с которым сравнивается расчётное значение.",
+                    ),
+                },
+            )
     with tabs[1]:
         for trace in result.formulas:
             with st.expander(f"{trace.title_ru}: {trace.result:.3f} {trace.unit}"):

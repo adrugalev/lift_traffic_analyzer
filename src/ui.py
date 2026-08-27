@@ -37,6 +37,7 @@ GENERATED_REPORT_KEYS = (
     "report_xlsx",
     "gost_report_docx",
     "gost_report_pdf",
+    "gost_report_include_parking",
 )
 
 DEMO_CLICK_THRESHOLD = 4
@@ -282,6 +283,9 @@ def update_project(project: Project) -> None:
     project.modified_at = datetime.now(timezone.utc)
     st.session_state.project = project
     st.session_state.analytic_result = None
+    st.session_state.gost_project_without_parking = None
+    st.session_state.gost_project_with_parking = None
+    st.session_state.parking_reference_result = None
     st.session_state.simulation_result = None
     st.session_state.variants = []
     invalidate_generated_reports()
