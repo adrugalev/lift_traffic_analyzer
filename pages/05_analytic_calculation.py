@@ -20,6 +20,20 @@ from src.utils.file_utils import safe_filename
 from src.utils.traffic_profiles import scenario_for_gost_calculation
 
 
+INTEGER_FORMULA_RESULTS = {
+    "gost_nominal_capacity",
+    "gost_calculated_car_capacity",
+}
+
+
+def _formatted_formula_result(trace) -> str:
+    """Форматирует дискретные вместимости без незначащих дробных знаков."""
+
+    if trace.formula_id in INTEGER_FORMULA_RESULTS:
+        return f"{trace.result:.0f}"
+    return f"{trace.result:.3f}"
+
+
 def _generate_gost_exports(project, result, *, include_parking: bool) -> list[str]:
     """Независимо формирует DOCX и PDF нормативного отчёта."""
 
@@ -424,7 +438,9 @@ if result:
             )
     with tabs[1]:
         for trace in result.formulas:
-            with st.expander(f"{trace.title_ru}: {trace.result:.3f} {trace.unit}"):
+            with st.expander(
+                f"{trace.title_ru}: {_formatted_formula_result(trace)} {trace.unit}"
+            ):
                 st.code(trace.expression, language=None)
                 st.write("Подстановка:", trace.substituted_expression)
                 st.json(trace.variables)

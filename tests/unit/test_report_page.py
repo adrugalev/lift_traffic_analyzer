@@ -34,6 +34,9 @@ def test_gost_download_is_rendered_on_calculation_page(monkeypatch) -> None:
     assert not app.exception
     assert "Лифтовая группа" not in [item.label for item in app.selectbox]
     assert [button.label for button in app.get("download_button")] == ["Скачать DOCX"]
+    expander_labels = [item.label for item in app.expander]
+    assert "Номинальная вместимость по грузоподъёмности: 13 пасс." in expander_labels
+    assert "Расчётная вместимость кабины: 10 пасс." in expander_labels
 
 
 def test_gost_calculation_separates_parking_reference(monkeypatch) -> None:
