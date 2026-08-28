@@ -38,6 +38,7 @@ GENERATED_REPORT_KEYS = (
     "gost_report_docx",
     "gost_report_pdf",
     "gost_report_include_parking",
+    "gost_report_include_extended_kinematics",
 )
 
 DEMO_CLICK_THRESHOLD = 4

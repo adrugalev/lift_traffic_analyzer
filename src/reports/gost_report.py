@@ -30,9 +30,9 @@ from src.models.results import CalculationResult, ComplianceStatus
 from src.reports.docx_report import (
     COMPLIES_COLOR,
     DOES_NOT_COMPLY_COLOR,
-    _add_list_item,
     _add_table,
     _configure_document,
+    _set_cell_shading,
     _set_document_language,
 )
 from src.reports.formula_rendering import (
@@ -96,6 +96,10 @@ def build_gost_docx_report(
     metrics = _metric_map(result)
     group = project.group(result.group_id)
     elevator = group.elevators[0]
+    extended_kinematics = any(
+        trace.formula_id == "gost_adjacent_floor_profile_time"
+        for trace in result.formulas
+    )
     served = [floor for floor in project.floors if floor.number in group.served_floors]
     travel_height = max(floor.elevation_m for floor in served) - min(
         floor.elevation_m for floor in served
@@ -210,7 +214,12 @@ def build_gost_docx_report(
     document.add_heading("2.2. Размещение лифтовых групп", level=2)
     _add_table(
         document,
-        ["Группа", "Расположение / зона", "Основной этаж", "Этажи"],
+        [
+            "Группа",
+            "Размещение группы",
+            "Основной посадочный этаж",
+            "Обслуживаемые этажи",
+        ],
         [
             [
                 item.name,
@@ -226,34 +235,34 @@ def build_gost_docx_report(
     document.add_heading("3. Критерии проектирования", level=1)
     _add_table(
         document,
-        ["Параметр", "Принято", "Требование", "Статус"],
+        ["Параметр", "Требование ГОСТ", "Расчётное значение", "Статус"],
         [
             [
-                "Провозная способность для пикового входящего потока",
-                f"{metrics['handling_capacity_5min'].value:.2f} пасс./5 мин",
-                metrics["handling_capacity_5min"].target_description or "",
-                metrics["handling_capacity_5min"].compliance.value,
-            ],
-            [
-                "Провозная способность к заселённости",
-                f"{metrics['specific_capacity'].value:.2f} %/5 мин",
+                "Относительная провозная способность",
                 metrics["specific_capacity"].target_description or "",
+                f"{metrics['specific_capacity'].value:.2f} %/5 мин",
                 metrics["specific_capacity"].compliance.value,
             ],
             [
-                "Интервал движения",
-                f"{metrics['interval'].value:.2f} с",
+                "Провозная способность для пикового входящего потока",
+                metrics["handling_capacity_5min"].target_description or "",
+                f"{metrics['handling_capacity_5min'].value:.2f} пасс./5 мин",
+                metrics["handling_capacity_5min"].compliance.value,
+            ],
+            [
+                "Интервал движения лифта с основного посадочного этажа",
                 metrics["interval"].target_description or "",
+                f"{metrics['interval'].value:.2f} с",
                 metrics["interval"].compliance.value,
             ],
             [
-                "Время движения на всю высоту",
-                f"{metrics['full_height_time'].value:.2f} с",
+                "Время движения лифта на всю высоту",
                 metrics["full_height_time"].target_description or "",
+                f"{metrics['full_height_time'].value:.2f} с",
                 metrics["full_height_time"].compliance.value,
             ],
         ],
-        [2.8, 1.35, 1.55, 1.2],
+        [2.45, 1.55, 1.35, 1.55],
     )
 
     document.add_heading("4. Информация о лифтовой установке", level=1)
@@ -261,43 +270,45 @@ def build_gost_docx_report(
         document,
         ["Параметр", "Значение"],
         [
-            ["Расположение группы", group.service_zone_name],
+            ["Расположение группы лифтов", group.service_zone_name],
             ["Количество лифтов в группе", group.elevator_count],
             ["Высота подъёма", f"{travel_height:.2f} м"],
             [
                 "Номинальная вместимость кабины",
                 f"{metrics['nominal_capacity'].value:.0f} пасс.",
             ],
-            ["Номинальная грузоподъёмность", f"{elevator.capacity_kg:.0f} кг"],
             [
-                "Расчётная вместимость Pк",
+                "Номинальная грузоподъёмность кабины",
+                f"{elevator.capacity_kg:.0f} кг",
+            ],
+            [
+                "Расчётная вместимость кабины",
                 f"{metrics['actual_car_passengers'].value:.0f} пасс.",
             ],
-            [
-                "Правило округления Pк",
-                "до ближайшего целого пассажира; 0,5 округляется вверх",
-            ],
-            ["Номинальная скорость", f"{elevator.speed_mps:.2f} м/с"],
-            ["Ускорение", f"{elevator.acceleration_mps2:.2f} м/с²"],
-            ["Замедление", f"{elevator.deceleration_mps2:.2f} м/с²"],
-            ["Рывок", f"{elevator.jerk_mps3:.2f} м/с³"],
-            [
-                "Достижение номинальной скорости на межэтажном пролёте",
-                (
-                    "достигается"
-                    if metrics["adjacent_floor_peak_speed"].value
-                    >= elevator.speed_mps - 1e-9
-                    else "не достигается"
-                ),
-            ],
+            ["Номинальная скорость лифта", f"{elevator.speed_mps:.2f} м/с"],
+            *(
+                [
+                    ["Ускорение", f"{elevator.acceleration_mps2:.2f} м/с²"],
+                    ["Замедление", f"{elevator.deceleration_mps2:.2f} м/с²"],
+                    ["Рывок", f"{elevator.jerk_mps3:.2f} м/с³"],
+                ]
+                if extended_kinematics
+                else []
+            ),
             [
                 "Максимальная скорость на межэтажном пролёте",
                 f"{metrics['adjacent_floor_peak_speed'].value:.2f} м/с",
             ],
-            [
-                "Межэтажное время движения с разгоном и торможением",
-                f"{metrics['adjacent_floor_profile_time'].value:.3f} с",
-            ],
+            *(
+                [
+                    [
+                        "Межэтажное время движения с разгоном и торможением",
+                        f"{metrics['adjacent_floor_profile_time'].value:.3f} с",
+                    ]
+                ]
+                if extended_kinematics
+                else []
+            ),
             [
                 "Время входа или выхода пассажира",
                 f"{next(trace.result for trace in result.formulas if trace.formula_id == 'gost_passenger_transfer_time'):.2f} с",
@@ -306,9 +317,18 @@ def build_gost_docx_report(
             ["Тип открывания дверей", elevator.door_opening_type.value],
             ["Время открывания дверей", f"{elevator.door_open_time_s:.2f} с"],
             ["Время закрывания дверей", f"{elevator.door_close_time_s:.2f} с"],
-            ["Время предварительного открывания", f"{elevator.pre_open_time_s:.2f} с"],
-            ["Время задержки закрывания", f"{elevator.door_dwell_time_s:.2f} с"],
-            ["Время задержки начала движения", f"{elevator.start_brake_allowance_s:.2f} с"],
+            [
+                "Время предварительного открывания дверей",
+                f"{elevator.pre_open_time_s:.2f} с",
+            ],
+            [
+                "Время задержки закрывания дверей",
+                f"{elevator.door_dwell_time_s:.2f} с",
+            ],
+            [
+                "Время задержки начала движения лифта",
+                f"{elevator.start_brake_allowance_s:.2f} с",
+            ],
             ["Время, затрачиваемое на остановку", f"{metrics['stop_time'].value:.2f} с"],
         ],
         [3.4, 3.5],
@@ -345,63 +365,61 @@ def build_gost_docx_report(
     document.add_heading("5. Расчётные данные провозной способности", level=1)
     _add_table(
         document,
-        ["Параметр", "Результат", "Критерий", "Оценка"],
+        ["Параметр", "Требование ГОСТ", "Результат", "Оценка"],
         [
-            ["Этаж реверса", f"{metrics['highest_reversal'].value:.3f}", "—", "—"],
-            ["Вероятное число остановок", f"{metrics['probable_stops'].value:.3f}", "—", "—"],
-            ["Время кругового рейса", f"{metrics['cycle_time'].value:.3f} с", "—", "—"],
+            ["Этаж реверса", "—", f"{metrics['highest_reversal'].value:.3f}", "—"],
+            ["Вероятное число остановок", "—", f"{metrics['probable_stops'].value:.3f}", "—"],
+            ["Время кругового рейса", "—", f"{metrics['cycle_time'].value:.3f} с", "—"],
             [
-                "Интервал в пиковый период",
-                f"{metrics['interval'].value:.3f} с",
+                "Интервал движения в пиковый период",
                 metrics["interval"].target_description or "",
+                f"{metrics['interval'].value:.3f} с",
                 metrics["interval"].compliance.value,
             ],
             [
                 "Провозная способность за 5 мин",
-                f"{metrics['handling_capacity_5min'].value:.3f} пасс.",
                 metrics["handling_capacity_5min"].target_description or "",
+                f"{metrics['handling_capacity_5min'].value:.3f} пасс.",
                 metrics["handling_capacity_5min"].compliance.value,
             ],
             [
-                "Провозная способность к заселённости",
-                f"{metrics['specific_capacity'].value:.3f} %",
+                "Относительная провозная способность в пиковый период",
                 metrics["specific_capacity"].target_description or "",
+                f"{metrics['specific_capacity'].value:.3f} %",
                 metrics["specific_capacity"].compliance.value,
             ],
             [
                 "Заполнение кабины",
-                f"{elevator.load_factor:.1%}",
                 "обычно 0,8 по п. 6.5.3",
+                f"{elevator.load_factor:.1%}",
                 "принято в расчёте",
             ],
             [
                 "Итоговая оценка соответствия",
-                _overall_status(result),
                 "таблицы 1 и 4",
+                _overall_status(result),
                 _overall_status(result),
             ],
         ],
-        [2.75, 1.45, 1.55, 1.15],
+        [2.45, 1.55, 1.45, 1.55],
     )
+    for cell in document.tables[-1].rows[-1].cells:
+        _set_cell_shading(cell, "D9EAF7")
+        for paragraph in cell.paragraphs:
+            for run in paragraph.runs:
+                run.font.bold = True
 
-    document.add_heading("6. Вывод и ограничения применимости", level=1)
-    document.add_paragraph(
-        f"По результатам расчётного метода выбранная конфигурация: {_overall_status(result).lower()} "
-        "критериям проектирования ГОСТ 34758-2021 в пределах принятой расчётной модели."
+    document.add_heading("6. Вывод", level=1)
+    conclusion = document.add_paragraph()
+    conclusion.add_run(
+        "По результатам расчётного метода выбранная конфигурация: "
     )
-    for recommendation in result.recommendations:
-        _add_list_item(
-            document,
-            f"{recommendation.problem} {recommendation.proposed_action} "
-            f"Ограничение: {recommendation.limitations}",
-        )
-    for limitation in (
-        "Расчёт выполнен для пикового пассажиропотока вверх при одном нижнем посадочном этаже.",
-        "Этажи приняты равномерно заселёнными, лифтовая группа — однородной.",
-        "Ориентировочное время ожидания не использовано как нормативный критерий.",
-        "Перед договорным применением требуется контроль по экземпляру стандарта заказчика.",
-    ):
-        _add_list_item(document, limitation)
+    status_run = conclusion.add_run(_overall_status(result).lower())
+    status_run.bold = True
+    conclusion.add_run(
+        " критериям проектирования ГОСТ 34758-2021 в пределах принятой "
+        "расчётной модели."
+    )
 
     document.add_page_break()
     document.add_heading("Приложение 1. Формулы и подстановка значений", level=1)
@@ -445,6 +463,10 @@ def build_gost_pdf_report(
     metrics = _metric_map(result)
     group = project.group(result.group_id)
     elevator = group.elevators[0]
+    extended_kinematics = any(
+        trace.formula_id == "gost_adjacent_floor_profile_time"
+        for trace in result.formulas
+    )
     served = [floor for floor in project.floors if floor.number in group.served_floors]
     travel_height = max(floor.elevation_m for floor in served) - min(
         floor.elevation_m for floor in served
@@ -558,15 +580,17 @@ def build_gost_pdf_report(
         widths: list[float],
         *,
         show_header: bool = True,
+        highlight_last_row: bool = False,
     ) -> Table:
-        def table_value(value: object) -> Paragraph:
+        def table_value(value: object, *, bold_value: bool = False) -> Paragraph:
             text = str(value).strip()
             color = {
                 ComplianceStatus.COMPLIES.value: COMPLIES_COLOR,
                 ComplianceStatus.DOES_NOT_COMPLY.value: DOES_NOT_COMPLY_COLOR,
             }.get(text)
-            if color is None:
+            if color is None and not bold_value:
                 return paragraph(value, "small")
+            color = color or "1F2937"
             return paragraph(
                 f'<font color="#{color}"><b>{escape(text)}</b></font>',
                 "small",
@@ -576,7 +600,18 @@ def build_gost_pdf_report(
         data: list[list[Paragraph]] = []
         if show_header:
             data.append([paragraph(item, "table_header") for item in headers])
-        data.extend([[table_value(item) for item in row] for row in rows])
+        data.extend(
+            [
+                [
+                    table_value(
+                        item,
+                        bold_value=highlight_last_row and row_index == len(rows) - 1,
+                    )
+                    for item in row
+                ]
+                for row_index, row in enumerate(rows)
+            ]
+        )
         output = Table(
             data,
             colWidths=[value * mm for value in widths],
@@ -601,6 +636,10 @@ def build_gost_pdf_report(
             commands.insert(
                 0,
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4D78")),
+            )
+        if highlight_last_row:
+            commands.append(
+                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#D9EAF7"))
             )
         output.setStyle(TableStyle(commands))
         return output
@@ -701,97 +740,155 @@ def build_gost_pdf_report(
         ),
         paragraph("3. Критерии проектирования", "h1"),
         table(
-            ["Параметр", "Факт", "Требование", "Оценка"],
+            ["Параметр", "Требование ГОСТ", "Расчётное значение", "Статус"],
             [
                 [
-                    "Провозная способность",
-                    f"{metrics['handling_capacity_5min'].value:.2f} пасс./5 мин",
+                    "Относительная провозная способность",
+                    metrics["specific_capacity"].target_description or "",
+                    f"{metrics['specific_capacity'].value:.2f} %/5 мин",
+                    metrics["specific_capacity"].compliance.value,
+                ],
+                [
+                    "Провозная способность для пикового входящего потока",
                     metrics["handling_capacity_5min"].target_description or "",
+                    f"{metrics['handling_capacity_5min'].value:.2f} пасс./5 мин",
                     metrics["handling_capacity_5min"].compliance.value,
                 ],
                 [
-                    "Интервал",
-                    f"{metrics['interval'].value:.2f} с",
+                    "Интервал движения лифта с основного посадочного этажа",
                     metrics["interval"].target_description or "",
+                    f"{metrics['interval'].value:.2f} с",
                     metrics["interval"].compliance.value,
                 ],
                 [
-                    "Время на всю высоту",
-                    f"{metrics['full_height_time'].value:.2f} с",
+                    "Время движения лифта на всю высоту",
                     metrics["full_height_time"].target_description or "",
+                    f"{metrics['full_height_time'].value:.2f} с",
                     metrics["full_height_time"].compliance.value,
                 ],
             ],
-            [55, 38, 40, 35],
+            [52, 38, 40, 38],
         ),
         paragraph("4. Информация о лифтовой установке", "h1"),
         table(
             ["Параметр", "Значение"],
             [
-                ["Группа / зона", f"{group.name}; {group.service_zone_name}"],
-                ["Количество лифтов", group.elevator_count],
+                ["Расположение группы лифтов", group.service_zone_name],
+                ["Количество лифтов в группе", group.elevator_count],
                 ["Высота подъёма", f"{travel_height:.2f} м"],
-                ["Грузоподъёмность / вместимость", f"{elevator.capacity_kg:.0f} кг / {metrics['nominal_capacity'].value:.0f} пасс."],
-                ["Расчётная вместимость Pк", f"{metrics['actual_car_passengers'].value:.0f} пасс."],
-                ["Правило округления Pк", "до ближайшего целого; 0,5 вверх"],
-                ["Скорость / дверь", f"{elevator.speed_mps:.2f} м/с / {elevator.door_width_m * 1000:.0f} мм"],
                 [
-                    "Ускорение / замедление / рывок",
-                    (
-                        f"{elevator.acceleration_mps2:.2f} м/с² / "
-                        f"{elevator.deceleration_mps2:.2f} м/с² / "
-                        f"{elevator.jerk_mps3:.2f} м/с³"
-                    ),
+                    "Номинальная вместимость кабины",
+                    f"{metrics['nominal_capacity'].value:.0f} пасс.",
                 ],
                 [
-                    "Номинальная скорость на межэтажном пролёте",
-                    (
-                        "достигается"
-                        if metrics["adjacent_floor_peak_speed"].value
-                        >= elevator.speed_mps - 1e-9
-                        else "не достигается"
-                    ),
+                    "Номинальная грузоподъёмность кабины",
+                    f"{elevator.capacity_kg:.0f} кг",
                 ],
+                [
+                    "Расчётная вместимость кабины",
+                    f"{metrics['actual_car_passengers'].value:.0f} пасс.",
+                ],
+                ["Номинальная скорость лифта", f"{elevator.speed_mps:.2f} м/с"],
+                *(
+                    [
+                        ["Ускорение", f"{elevator.acceleration_mps2:.2f} м/с²"],
+                        ["Замедление", f"{elevator.deceleration_mps2:.2f} м/с²"],
+                        ["Рывок", f"{elevator.jerk_mps3:.2f} м/с³"],
+                    ]
+                    if extended_kinematics
+                    else []
+                ),
                 [
                     "Максимальная скорость на межэтажном пролёте",
                     f"{metrics['adjacent_floor_peak_speed'].value:.2f} м/с",
                 ],
+                *(
+                    [
+                        [
+                            "Межэтажное время с разгоном и торможением",
+                            f"{metrics['adjacent_floor_profile_time'].value:.3f} с",
+                        ]
+                    ]
+                    if extended_kinematics
+                    else []
+                ),
                 [
-                    "Межэтажное время с разгоном и торможением",
-                    f"{metrics['adjacent_floor_profile_time'].value:.3f} с",
+                    "Время входа или выхода пассажира",
+                    (
+                        f"{next(trace.result for trace in result.formulas if trace.formula_id == 'gost_passenger_transfer_time'):.2f} с"
+                    ),
                 ],
-                ["Открытие / закрытие / предв. открытие", f"{elevator.door_open_time_s:.2f} / {elevator.door_close_time_s:.2f} / {elevator.pre_open_time_s:.2f} с"],
+                ["Ширина дверного проёма", f"{elevator.door_width_m * 1000:.0f} мм"],
                 ["Тип открывания дверей", elevator.door_opening_type.value],
-                ["Задержка закрытия / пуска", f"{elevator.door_dwell_time_s:.2f} / {elevator.start_brake_allowance_s:.2f} с"],
-                ["Время остановки", f"{metrics['stop_time'].value:.2f} с"],
+                ["Время открывания дверей", f"{elevator.door_open_time_s:.2f} с"],
+                ["Время закрывания дверей", f"{elevator.door_close_time_s:.2f} с"],
+                [
+                    "Время предварительного открывания дверей",
+                    f"{elevator.pre_open_time_s:.2f} с",
+                ],
+                [
+                    "Время задержки закрывания дверей",
+                    f"{elevator.door_dwell_time_s:.2f} с",
+                ],
+                [
+                    "Время задержки начала движения лифта",
+                    f"{elevator.start_brake_allowance_s:.2f} с",
+                ],
+                [
+                    "Время, затрачиваемое на остановку",
+                    f"{metrics['stop_time'].value:.2f} с",
+                ],
             ],
             [76, 92],
         ),
         *parking_story,
         paragraph("5. Расчётные данные провозной способности", "h1"),
         table(
-            ["Параметр", "Результат", "Оценка"],
+            ["Параметр", "Требование ГОСТ", "Результат", "Оценка"],
             [
-                ["Этаж реверса", f"{metrics['highest_reversal'].value:.3f}", "—"],
-                ["Вероятное число остановок", f"{metrics['probable_stops'].value:.3f}", "—"],
-                ["Время кругового рейса", f"{metrics['cycle_time'].value:.3f} с", "—"],
-                ["Интервал", f"{metrics['interval'].value:.3f} с", metrics["interval"].compliance.value],
-                ["Провозная способность за 5 мин", f"{metrics['handling_capacity_5min'].value:.3f}", metrics["handling_capacity_5min"].compliance.value],
-                ["Провозная способность, %", f"{metrics['specific_capacity'].value:.3f}", metrics["specific_capacity"].compliance.value],
-                ["Заполнение кабины", f"{elevator.load_factor:.1%}", "принято"],
-                ["Итог", _overall_status(result), _overall_status(result)],
+                ["Этаж реверса", "—", f"{metrics['highest_reversal'].value:.3f}", "—"],
+                ["Вероятное число остановок", "—", f"{metrics['probable_stops'].value:.3f}", "—"],
+                ["Время кругового рейса", "—", f"{metrics['cycle_time'].value:.3f} с", "—"],
+                [
+                    "Интервал движения в пиковый период",
+                    metrics["interval"].target_description or "",
+                    f"{metrics['interval'].value:.3f} с",
+                    metrics["interval"].compliance.value,
+                ],
+                [
+                    "Провозная способность за 5 мин",
+                    metrics["handling_capacity_5min"].target_description or "",
+                    f"{metrics['handling_capacity_5min'].value:.3f} пасс.",
+                    metrics["handling_capacity_5min"].compliance.value,
+                ],
+                [
+                    "Относительная провозная способность в пиковый период",
+                    metrics["specific_capacity"].target_description or "",
+                    f"{metrics['specific_capacity'].value:.3f} %",
+                    metrics["specific_capacity"].compliance.value,
+                ],
+                [
+                    "Заполнение кабины",
+                    "обычно 0,8 по п. 6.5.3",
+                    f"{elevator.load_factor:.1%}",
+                    "принято в расчёте",
+                ],
+                [
+                    "Итоговая оценка соответствия",
+                    "таблицы 1 и 4",
+                    _overall_status(result),
+                    _overall_status(result),
+                ],
             ],
-            [82, 48, 38],
+            [52, 39, 39, 38],
+            highlight_last_row=True,
         ),
-        paragraph("6. Вывод и ограничения", "h1"),
+        paragraph("6. Вывод", "h1"),
         paragraph(
-            f"Выбранная конфигурация: {_overall_status(result).lower()} критериям "
-            "расчётного метода ГОСТ 34758-2021."
-        ),
-        paragraph(
-            "Область применимости: восходящий пик, один нижний посадочный этаж, "
-            "равномерное заселение и однородная группа. Перед договорным применением "
-            "требуется контроль по экземпляру стандарта заказчика."
+            "По результатам расчётного метода выбранная конфигурация: "
+            f"<b>{escape(_overall_status(result).lower())}</b> критериям "
+            "проектирования ГОСТ 34758-2021 в пределах принятой расчётной модели.",
+            markup=True,
         ),
         paragraph("Формулы и ссылки", "h1"),
     ]

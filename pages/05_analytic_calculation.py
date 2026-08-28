@@ -34,13 +34,20 @@ def _formatted_formula_result(trace) -> str:
     return f"{trace.result:.3f}"
 
 
-def _generate_gost_exports(project, result, *, include_parking: bool) -> list[str]:
+def _generate_gost_exports(
+    project,
+    result,
+    *,
+    include_parking: bool,
+    include_extended_kinematics: bool,
+) -> list[str]:
     """Независимо формирует DOCX и PDF нормативного отчёта."""
 
     for key in (
         "gost_report_docx",
         "gost_report_pdf",
         "gost_report_include_parking",
+        "gost_report_include_extended_kinematics",
     ):
         st.session_state.pop(key, None)
     errors: list[str] = []
@@ -53,6 +60,9 @@ def _generate_gost_exports(project, result, *, include_parking: bool) -> list[st
     except Exception as exc:
         errors.append(f"PDF: {exc}")
     st.session_state.gost_report_include_parking = include_parking
+    st.session_state.gost_report_include_extended_kinematics = (
+        include_extended_kinematics
+    )
     return errors
 
 
@@ -185,13 +195,18 @@ if normative_clicked:
     try:
         normative_project = _project_for_gost(project, include_parking=True)
         strict_gost_project = _project_for_gost(project, include_parking=False)
-        result = engine.calculate_normative(strict_gost_project, group.id)
+        result = engine.calculate_normative(
+            strict_gost_project,
+            group.id,
+            include_extended_kinematics=False,
+        )
         result.recommendations = RecommendationEngine.generate(result)
         parking_reference_result = None
         if _parking_is_configured(normative_project, group.id):
             parking_reference_result = engine.calculate_normative(
                 normative_project,
                 group.id,
+                include_extended_kinematics=False,
             )
             parking_reference_result.recommendations = RecommendationEngine.generate(
                 parking_reference_result
@@ -201,6 +216,8 @@ if normative_clicked:
         st.session_state.gost_project_without_parking = strict_gost_project
         st.session_state.gost_project_with_parking = normative_project
         st.session_state.parking_reference_result = parking_reference_result
+        st.session_state.gost_result_include_parking = False
+        st.session_state.gost_result_include_extended_kinematics = False
         st.success("Расчёт по ГОСТ выполнен без учёта паркинга.")
     except NormativeConfigurationError as exc:
         st.error(str(exc))
@@ -213,7 +230,7 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
     parking_configured = _parking_is_configured(project, group.id)
     if not parking_configured:
         st.session_state.include_parking_in_gost_report = False
-    report_controls = st.columns([1, 1])
+    report_controls = st.columns([1, 1, 1.35])
     with report_controls[0]:
         include_parking_in_report = st.checkbox(
             "Включать в расчёт паркинг",
@@ -226,13 +243,96 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                 "каждый круговой рейс считается с заходом на паркинг."
             ),
         )
-    stored_report_mode = st.session_state.get("gost_report_include_parking")
-    report_mode_matches = (
-        stored_report_mode == include_parking_in_report
-        if stored_report_mode is not None
-        else not parking_configured
-    )
     with report_controls[1]:
+        include_extended_kinematics_in_report = st.checkbox(
+            "Учитывать дополнительную кинематику",
+            value=False,
+            key="include_extended_kinematics_in_gost_report",
+            help=(
+                "Если галочка снята, межэтажное время определяется строго по "
+                "формуле (8) ГОСТ: hэт / vн, а максимальная скорость принимается "
+                "равной номинальной. Если галочка установлена, применяется "
+                "дополнительная инженерная модель S-образного профиля с учётом "
+                "ускорения, замедления и рывка; эта модель не является формулой ГОСТ."
+            ),
+        )
+    previous_parking_mode = bool(
+        st.session_state.get("gost_result_include_parking", False)
+    )
+    previous_kinematics_mode = bool(
+        st.session_state.get(
+            "gost_result_include_extended_kinematics",
+            False,
+        )
+    )
+    result_mode_changed = (
+        previous_parking_mode != include_parking_in_report
+        or previous_kinematics_mode != include_extended_kinematics_in_report
+    )
+    if result_mode_changed:
+        try:
+            selected_project = st.session_state.get(
+                "gost_project_with_parking"
+                if include_parking_in_report
+                else "gost_project_without_parking"
+            )
+            if selected_project is None:
+                selected_project = _project_for_gost(
+                    project,
+                    include_parking=include_parking_in_report,
+                )
+            recalculated_result = engine.calculate_normative(
+                selected_project,
+                group.id,
+                include_extended_kinematics=(
+                    include_extended_kinematics_in_report
+                ),
+            )
+            recalculated_result.recommendations = RecommendationEngine.generate(
+                recalculated_result
+            )
+            parking_reference_result = None
+            parking_project = st.session_state.get("gost_project_with_parking")
+            if (
+                not include_parking_in_report
+                and parking_project is not None
+                and _parking_is_configured(parking_project, group.id)
+            ):
+                parking_reference_result = engine.calculate_normative(
+                    parking_project,
+                    group.id,
+                    include_extended_kinematics=(
+                        include_extended_kinematics_in_report
+                    ),
+                )
+                parking_reference_result.recommendations = (
+                    RecommendationEngine.generate(parking_reference_result)
+                )
+            invalidate_generated_reports()
+            st.session_state.analytic_result = recalculated_result
+            st.session_state.parking_reference_result = parking_reference_result
+            st.session_state.gost_result_include_parking = (
+                include_parking_in_report
+            )
+            st.session_state.gost_result_include_extended_kinematics = (
+                include_extended_kinematics_in_report
+            )
+            result = recalculated_result
+        except NormativeConfigurationError as exc:
+            st.error(str(exc))
+        except Exception as exc:
+            st.error(f"Не удалось обновить расчёт: {exc}")
+    stored_parking_mode = st.session_state.get("gost_report_include_parking")
+    stored_kinematics_mode = st.session_state.get(
+        "gost_report_include_extended_kinematics"
+    )
+    report_mode_matches = (
+        stored_parking_mode is not None
+        and stored_kinematics_mode is not None
+        and stored_parking_mode == include_parking_in_report
+        and stored_kinematics_mode == include_extended_kinematics_in_report
+    )
+    with report_controls[2]:
         available_gost_reports = [
             ("DOCX", st.session_state.get("gost_report_docx")),
             ("PDF", st.session_state.get("gost_report_pdf")),
@@ -243,8 +343,16 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
         if not report_mode_matches:
             available_gost_reports = []
         if not available_gost_reports:
+            report_button_label = (
+                "Сформировать отчёт по ГОСТ (уточнённый)"
+                if (
+                    include_parking_in_report
+                    or include_extended_kinematics_in_report
+                )
+                else "Сформировать отчёт по ГОСТ"
+            )
             if st.button(
-                "Сформировать отчёт по ГОСТ",
+                report_button_label,
                 key="prepare_gost_report",
                 use_container_width=True,
                 help=(
@@ -257,26 +365,29 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                     if include_parking_in_report
                     else "gost_project_without_parking"
                 )
-                report_result = (
-                    st.session_state.get("parking_reference_result")
-                    if include_parking_in_report
-                    else result
-                )
                 if report_project is None:
                     report_project = _project_for_gost(
                         project,
                         include_parking=include_parking_in_report,
                     )
-                if report_result is None:
-                    report_result = engine.calculate_normative(
-                        report_project,
-                        group.id,
-                    )
+                report_result = engine.calculate_normative(
+                    report_project,
+                    group.id,
+                    include_extended_kinematics=(
+                        include_extended_kinematics_in_report
+                    ),
+                )
+                report_result.recommendations = RecommendationEngine.generate(
+                    report_result
+                )
                 with st.spinner("Подготавливается отчёт по ГОСТ…"):
                     gost_export_errors = _generate_gost_exports(
                         report_project,
                         report_result,
                         include_parking=include_parking_in_report,
+                        include_extended_kinematics=(
+                            include_extended_kinematics_in_report
+                        ),
                     )
                 if gost_export_errors:
                     st.error(
@@ -341,15 +452,24 @@ if result:
                 help=metric_help[key],
             )
     if result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
+        selected_mode_notes = []
+        if include_parking_in_report:
+            selected_mode_notes.append("с учётом справочной поправки на паркинг")
+        else:
+            selected_mode_notes.append("без учёта паркинга")
+        if include_extended_kinematics_in_report:
+            selected_mode_notes.append("с дополнительной инженерной кинематикой")
+        else:
+            selected_mode_notes.append("со строгой формулой межэтажного времени ГОСТ")
         st.caption(
-            "Основные показатели и статусы рассчитаны по ГОСТ 34758-2021 "
-            "без учёта паркинга. "
-            "Ориентировочное время ожидания нормативно не оценивается."
+            "Показатели автоматически пересчитаны "
+            + ", ".join(selected_mode_notes)
+            + ". Ориентировочное время ожидания нормативно не оценивается."
         )
         parking_reference_result = st.session_state.get(
             "parking_reference_result"
         )
-        if parking_reference_result is not None:
+        if parking_reference_result is not None and not include_parking_in_report:
             st.markdown("**Справочная оценка влияния паркинга**")
             st.caption(
                 "Не является расчётом по ГОСТ и не влияет на показанные выше "

@@ -50,3 +50,49 @@ def test_page_saves_all_lifts_as_one_implicit_group(monkeypatch) -> None:
         floor.served_by_group_ids == [saved.elevator_groups[0].id]
         for floor in saved.floors
     )
+
+
+def test_page_deletes_multiple_lifts_and_keeps_one_minimum(monkeypatch) -> None:
+    monkeypatch.setattr(ui, "render_navigation", lambda: None)
+    project = ProjectService.create_default()
+    group = project.elevator_groups[0]
+    for index in range(3, 5):
+        elevator = group.elevators[-1].model_copy(deep=True)
+        elevator.id = f"lift-{index}"
+        elevator.name = f"Лифт A{index}"
+        group.elevators.append(elevator)
+    page = Path(__file__).resolve().parents[2] / "pages" / "03_elevator_groups.py"
+    app = AppTest.from_file(str(page))
+    app.session_state["project"] = project
+    app.session_state["analytic_result"] = object()
+    app.session_state["simulation_result"] = object()
+    app.session_state["variants"] = [object()]
+
+    app.run(timeout=20)
+    assert not app.exception
+    assert len(app.session_state["project"].elevator_groups[0].elevators) == 4
+
+    selector = next(
+        item for item in app.multiselect if item.label == "Лифты для удаления"
+    )
+    selector.set_value([1, 2]).run(timeout=20)
+    next(item for item in app.button if item.label == "Удалить").click()
+    app.run(timeout=20)
+
+    saved = app.session_state["project"]
+    assert not app.exception
+    assert [item.name for item in saved.elevator_groups[0].elevators] == [
+        "Лифт A1",
+        "Лифт A4",
+    ]
+    assert app.session_state["analytic_result"] is None
+    assert app.session_state["simulation_result"] is None
+    assert app.session_state["variants"] == []
+
+    selector = next(
+        item for item in app.multiselect if item.label == "Лифты для удаления"
+    )
+    selector.set_value([0, 1]).run(timeout=20)
+    assert next(
+        item for item in app.button if item.label == "Удалить"
+    ).disabled

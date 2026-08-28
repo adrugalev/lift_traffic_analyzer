@@ -483,7 +483,13 @@ class AnalyticEngine:
         self.configuration = configuration or ConfigurationService()
         self.formulas = formulas or FormulaService(self.configuration)
 
-    def calculate_normative(self, project: Project, group_id: str | None = None) -> CalculationResult:
+    def calculate_normative(
+        self,
+        project: Project,
+        group_id: str | None = None,
+        *,
+        include_extended_kinematics: bool = True,
+    ) -> CalculationResult:
         """Выполняет расчётный метод ГОСТ 34758-2021 в его области применимости."""
 
         if not self.configuration.standard_ready("GOST_34758_2021"):
@@ -624,38 +630,49 @@ class AnalyticEngine:
         floor_nominal_time = adjacent_floor_nominal_time(
             average_floor_height, elevator.speed_mps
         )
-        nominal_acceleration_distance = jerk_limited_transition_distance(
-            elevator.speed_mps,
-            elevator.acceleration_mps2,
-            elevator.jerk_mps3,
-        )
-        nominal_deceleration_distance = jerk_limited_transition_distance(
-            elevator.speed_mps,
-            elevator.deceleration_mps2,
-            elevator.jerk_mps3,
-        )
-        nominal_transition_distance = (
-            nominal_acceleration_distance + nominal_deceleration_distance
-        )
-        adjacent_floor_peak_speed = jerk_limited_peak_speed(
-            average_floor_height,
-            elevator.speed_mps,
-            elevator.acceleration_mps2,
-            elevator.deceleration_mps2,
-            elevator.jerk_mps3,
-        )
-        nominal_speed_reached = (
-            nominal_transition_distance
-            <= average_floor_height + 1e-9
-        )
-        floor_motion_phases = jerk_limited_travel_phases(
-            average_floor_height,
-            elevator.speed_mps,
-            elevator.acceleration_mps2,
-            elevator.deceleration_mps2,
-            elevator.jerk_mps3,
-        )
-        floor_profile_time = sum(floor_motion_phases)
+        if include_extended_kinematics:
+            nominal_acceleration_distance = jerk_limited_transition_distance(
+                elevator.speed_mps,
+                elevator.acceleration_mps2,
+                elevator.jerk_mps3,
+            )
+            nominal_deceleration_distance = jerk_limited_transition_distance(
+                elevator.speed_mps,
+                elevator.deceleration_mps2,
+                elevator.jerk_mps3,
+            )
+            nominal_transition_distance = (
+                nominal_acceleration_distance + nominal_deceleration_distance
+            )
+            adjacent_floor_peak_speed = jerk_limited_peak_speed(
+                average_floor_height,
+                elevator.speed_mps,
+                elevator.acceleration_mps2,
+                elevator.deceleration_mps2,
+                elevator.jerk_mps3,
+            )
+            nominal_speed_reached = (
+                nominal_transition_distance <= average_floor_height + 1e-9
+            )
+            floor_motion_phases = jerk_limited_travel_phases(
+                average_floor_height,
+                elevator.speed_mps,
+                elevator.acceleration_mps2,
+                elevator.deceleration_mps2,
+                elevator.jerk_mps3,
+            )
+            floor_profile_time = sum(floor_motion_phases)
+        else:
+            # В формуле (8) ГОСТ используется номинальная скорость. Стандарт
+            # не задаёт отдельную зависимость для расчёта пиковой скорости на
+            # коротком пролёте, поэтому дополнительные a, b и j здесь не
+            # подставляются.
+            nominal_acceleration_distance = 0.0
+            nominal_deceleration_distance = 0.0
+            adjacent_floor_peak_speed = elevator.speed_mps
+            nominal_speed_reached = True
+            floor_motion_phases = (0.0, floor_nominal_time, 0.0)
+            floor_profile_time = floor_nominal_time
         stop_time = normative_stop_time(
             elevator.door_close_time_s,
             elevator.start_brake_allowance_s,
@@ -779,7 +796,7 @@ class AnalyticEngine:
         average_wait_proxy = interval / 2.0
 
         kinematic_traces: list[FormulaTrace] = []
-        symmetric_profile = math.isclose(
+        symmetric_profile = include_extended_kinematics and math.isclose(
             elevator.acceleration_mps2,
             elevator.deceleration_mps2,
             rel_tol=1e-9,
@@ -851,6 +868,37 @@ class AnalyticEngine:
                 )
             )
 
+        profile_time_traces = []
+        if include_extended_kinematics:
+            profile_time_traces.append(
+                self._trace(
+                    "gost_adjacent_floor_profile_time",
+                    (
+                        f"tэт = fS(hэт={average_floor_height:.3f}, "
+                        f"vн={elevator.speed_mps:.3f}, "
+                        f"a={elevator.acceleration_mps2:.3f}, "
+                        f"b={elevator.deceleration_mps2:.3f}, "
+                        f"j={elevator.jerk_mps3:.3f}) = "
+                        f"{floor_motion_phases[0]:.3f} + "
+                        f"{floor_motion_phases[1]:.3f} + "
+                        f"{floor_motion_phases[2]:.3f} = {floor_profile_time:.3f}"
+                    ),
+                    {
+                        "hэт": average_floor_height,
+                        "vн": elevator.speed_mps,
+                        "a": elevator.acceleration_mps2,
+                        "b": elevator.deceleration_mps2,
+                        "j": elevator.jerk_mps3,
+                        "tразг": floor_motion_phases[0],
+                        "tуст": floor_motion_phases[1],
+                        "tторм": floor_motion_phases[2],
+                    },
+                    {"профиль": "идеальный S-образный, ограниченный a, b и j"},
+                    floor_profile_time,
+                    "",
+                )
+            )
+
         traces = [
             self._trace(
                 "gost_nominal_capacity",
@@ -913,32 +961,7 @@ class AnalyticEngine:
                 "",
             ),
             *kinematic_traces,
-            self._trace(
-                "gost_adjacent_floor_profile_time",
-                (
-                    f"tэт = fS(hэт={average_floor_height:.3f}, "
-                    f"vн={elevator.speed_mps:.3f}, "
-                    f"a={elevator.acceleration_mps2:.3f}, "
-                    f"b={elevator.deceleration_mps2:.3f}, "
-                    f"j={elevator.jerk_mps3:.3f}) = "
-                    f"{floor_motion_phases[0]:.3f} + "
-                    f"{floor_motion_phases[1]:.3f} + "
-                    f"{floor_motion_phases[2]:.3f} = {floor_profile_time:.3f}"
-                ),
-                {
-                    "hэт": average_floor_height,
-                    "vн": elevator.speed_mps,
-                    "a": elevator.acceleration_mps2,
-                    "b": elevator.deceleration_mps2,
-                    "j": elevator.jerk_mps3,
-                    "tразг": floor_motion_phases[0],
-                    "tуст": floor_motion_phases[1],
-                    "tторм": floor_motion_phases[2],
-                },
-                {"профиль": "идеальный S-образный, ограниченный a, b и j"},
-                floor_profile_time,
-                "",
-            ),
+            *profile_time_traces,
             self._trace(
                 "gost_stop_time",
                 (
@@ -1226,12 +1249,20 @@ class AnalyticEngine:
                 title_ru="Максимальная скорость между соседними этажами",
                 value=adjacent_floor_peak_speed,
                 unit="м/с",
-                method="Принятая кинематическая интерпретация S-образного профиля",
+                method=(
+                    "Принятая кинематическая интерпретация S-образного профиля"
+                    if include_extended_kinematics
+                    else "ГОСТ 34758-2021, раздел 7, формула (8)"
+                ),
                 target_value=elevator.speed_mps,
                 target_description=(
-                    "Номинальная скорость достигается"
-                    if nominal_speed_reached
-                    else "Номинальная скорость на пролёте не достигается"
+                    (
+                        "Номинальная скорость достигается"
+                        if nominal_speed_reached
+                        else "Номинальная скорость на пролёте не достигается"
+                    )
+                    if include_extended_kinematics
+                    else "Принята номинальная скорость по формуле (8)"
                 ),
             ),
             MetricResult(
@@ -1239,7 +1270,11 @@ class AnalyticEngine:
                 title_ru="Межэтажное время движения с разгоном и торможением",
                 value=floor_profile_time,
                 unit="с",
-                method="ГОСТ 34758-2021, принятая кинематическая интерпретация",
+                method=(
+                    "ГОСТ 34758-2021, принятая кинематическая интерпретация"
+                    if include_extended_kinematics
+                    else "ГОСТ 34758-2021, раздел 7, формула (8)"
+                ),
             ),
             MetricResult(
                 key="cycle_time",
@@ -1328,7 +1363,7 @@ class AnalyticEngine:
         ]
 
         messages = list(validation_messages)
-        if not nominal_speed_reached:
+        if include_extended_kinematics and not nominal_speed_reached:
             messages.append(
                 DiagnosticMessage(
                     severity=MessageSeverity.INFO,

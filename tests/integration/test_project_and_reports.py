@@ -181,20 +181,56 @@ def test_gost_report_contains_section_9_information() -> None:
     assert "Форма по ГОСТ 34758-2021, раздел 9" in text
     assert "1. Общие сведения" in text
     assert "2. Информация о здании" in text
+    assert "Размещение группы" in text
+    assert "Основной посадочный этаж" in text
+    assert "Обслуживаемые этажи" in text
     assert "3. Критерии проектирования" in text
+    criteria_table = next(
+        table
+        for table in document.tables
+        if [cell.text for cell in table.rows[0].cells]
+        == ["Параметр", "Требование ГОСТ", "Расчётное значение", "Статус"]
+    )
+    assert [row.cells[0].text for row in criteria_table.rows[1:]] == [
+        "Относительная провозная способность",
+        "Провозная способность для пикового входящего потока",
+        "Интервал движения лифта с основного посадочного этажа",
+        "Время движения лифта на всю высоту",
+    ]
     assert "4. Информация о лифтовой установке" in text
     assert "5. Расчётные данные провозной способности" in text
+    assert "6. Вывод" in text
+    assert "6. Вывод и ограничения применимости" not in text
+    assert "Перед договорным применением" not in text
+    conclusion = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph.text.startswith("По результатам расчётного метода")
+    )
+    conclusion_status = next(
+        run
+        for run in conclusion.runs
+        if run.text in {"соответствует", "не соответствует"}
+    )
+    assert conclusion_status.bold
     assert "Итоговая оценка соответствия" in text
     assert "Время предварительного открывания" in text
     assert "Тип открывания дверей" in text
     assert "Ускорение" in text
     assert "Замедление" in text
     assert "Рывок" in text
-    assert "Достижение номинальной скорости на межэтажном пролёте" in text
+    assert "Достижение номинальной скорости на межэтажном пролёте" not in text
+    assert "Правило округления Pк" not in text
+    assert "Расположение группы лифтов" in text
+    assert "Номинальная грузоподъёмность кабины" in text
+    assert "Расчётная вместимость кабины" in text
+    assert "Номинальная скорость лифта" in text
+    assert "Время предварительного открывания дверей" in text
+    assert "Время задержки закрывания дверей" in text
+    assert "Время задержки начала движения лифта" in text
     assert "Максимальная скорость на межэтажном пролёте" in text
     assert "Проверка достижения номинальной скорости" in text
     assert "Межэтажное время движения с разгоном и торможением" in text
-    assert "0,5 округляется вверх" in text
     assert document.tables[0].cell(0, 0).text == "Компания, выполнившая проектирование"
     assert document.tables[0].cell(0, 1).text == (project.metadata.designer or "не указана")
     assert document.tables[1].cell(0, 0).text == "Наименование здания"
@@ -244,10 +280,35 @@ def test_gost_report_contains_section_9_information() -> None:
     )
     assert [cell.text for cell in calculation_table.rows[0].cells] == [
         "Параметр",
+        "Требование ГОСТ",
         "Результат",
-        "Критерий",
         "Оценка",
     ]
+    assert calculation_table.cell(4, 0).text == (
+        "Интервал движения в пиковый период"
+    )
+    assert calculation_table.cell(6, 0).text == (
+        "Относительная провозная способность в пиковый период"
+    )
+    final_row = calculation_table.rows[-1]
+    assert final_row.cells[0].text == "Итоговая оценка соответствия"
+    assert all(
+        cell._tc.get_or_add_tcPr().find(qn("w:shd")).get(qn("w:fill"))
+        == "D9EAF7"
+        for cell in final_row.cells
+    )
+    assert all(
+        run.bold
+        for cell in final_row.cells
+        for paragraph in cell.paragraphs
+        for run in paragraph.runs
+        if run.text
+    )
+    assert all(
+        row.cells[3]._tc.get_or_add_tcPr().find(qn("w:noWrap")) is not None
+        for row in calculation_table.rows
+        if row.cells[3].text in {"Соответствует", "Не соответствует"}
+    )
 
     floors_table = next(
         table
@@ -273,14 +334,15 @@ def test_gost_report_contains_section_9_information() -> None:
         table
         for table in document.tables
         if len(table.rows) > 1
-        and table.cell(1, 0).text == "Провозная способность для пикового входящего потока"
+        and table.cell(1, 0).text == "Относительная провозная способность"
     )
     assert criteria_table.cell(0, 0).text == "Параметр"
 
     installation_table = next(
         table
         for table in document.tables
-        if len(table.rows) > 1 and table.cell(1, 0).text == "Расположение группы"
+        if len(table.rows) > 1
+        and table.cell(1, 0).text == "Расположение группы лифтов"
     )
     assert installation_table.cell(0, 0).text == "Параметр"
 
@@ -294,6 +356,9 @@ def test_gost_pdf_report_reopens_and_has_pages() -> None:
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     assert "Сведения по п. 9" not in text
     assert "Критерий по п. 9" not in text
+    assert "6. Вывод" in text
+    assert "6. Вывод и ограничения" not in text
+    assert "Перед договорным применением" not in text
     report_datetime = analytic.audit.calculated_at.astimezone().strftime(
         "%d.%m.%Y %H:%M:%S"
     )
@@ -306,5 +371,37 @@ def test_gost_pdf_report_reopens_and_has_pages() -> None:
     for trace in analytic.formulas:
         assert f"{trace.result:.2f} {trace.unit}" in text
     assert not re.search(r"Результат:\s*-?\d+\.\d{3,}", text)
-    assert "RTZ" not in text
-    assert "(зима)" not in text
+
+
+def test_strict_gost_report_omits_extended_kinematics() -> None:
+    project = ProjectService.create_default()
+    analytic = AnalyticEngine().calculate_normative(
+        project,
+        include_extended_kinematics=False,
+    )
+
+    docx = Document(BytesIO(build_gost_docx_report(project, analytic)))
+    docx_text = "\n".join(
+        cell.text
+        for table in docx.tables
+        for row in table.rows
+        for cell in row.cells
+    )
+    pdf_text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(BytesIO(build_gost_pdf_report(project, analytic))).pages
+    )
+
+    for excluded in (
+        "Ускорение",
+        "Замедление",
+        "Рывок",
+        "Межэтажное время движения с разгоном и торможением",
+    ):
+        assert excluded not in docx_text
+    assert "Ускорение" not in pdf_text
+    assert "Замедление" not in pdf_text
+    assert "Рывок" not in pdf_text
+    assert "Межэтажное время с разгоном и торможением" not in pdf_text
+    assert "RTZ" not in pdf_text
+    assert "(зима)" not in pdf_text

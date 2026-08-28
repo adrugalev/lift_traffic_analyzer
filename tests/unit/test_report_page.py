@@ -28,6 +28,8 @@ def test_gost_download_is_rendered_on_calculation_page(monkeypatch) -> None:
     app.session_state["simulation_result"] = None
     app.session_state["variants"] = []
     app.session_state["gost_report_docx"] = b"docx-only"
+    app.session_state["gost_report_include_parking"] = False
+    app.session_state["gost_report_include_extended_kinematics"] = False
 
     app.run(timeout=20)
 
@@ -102,10 +104,13 @@ def test_gost_calculation_separates_parking_reference(monkeypatch) -> None:
         if item.label == "Включать в расчёт паркинг"
     )
     parking_checkbox.check().run(timeout=20)
+    automatically_updated = app.session_state["analytic_result"]
+    assert automatically_updated.metric("parking_round_trip_addition").value > 0
+    assert app.session_state["gost_result_include_parking"] is True
     next(
         button
         for button in app.button
-        if button.label == "Сформировать отчёт по ГОСТ"
+        if button.label == "Сформировать отчёт по ГОСТ (уточнённый)"
     ).click().run(timeout=20)
     assert app.session_state["gost_report_include_parking"] is True
     assert app.session_state["gost_report_docx"] == b"parking-report"
@@ -115,6 +120,11 @@ def test_gost_calculation_separates_parking_reference(monkeypatch) -> None:
         for item in app.checkbox
         if item.label == "Включать в расчёт паркинг"
     ).uncheck().run(timeout=20)
+    automatically_updated = app.session_state["analytic_result"]
+    assert "parking_round_trip_addition" not in {
+        metric.key for metric in automatically_updated.metrics
+    }
+    assert app.session_state["gost_result_include_parking"] is False
     next(
         button
         for button in app.button
@@ -122,3 +132,21 @@ def test_gost_calculation_separates_parking_reference(monkeypatch) -> None:
     ).click().run(timeout=20)
     assert app.session_state["gost_report_include_parking"] is False
     assert app.session_state["gost_report_docx"] == b"strict-gost-report"
+
+    kinematics_checkbox = next(
+        item
+        for item in app.checkbox
+        if item.label == "Учитывать дополнительную кинематику"
+    )
+    kinematics_checkbox.check().run(timeout=20)
+    automatically_updated = app.session_state["analytic_result"]
+    assert "kinematic_maximum_speed" in {
+        trace.formula_id for trace in automatically_updated.formulas
+    }
+    assert app.session_state["gost_result_include_extended_kinematics"] is True
+    next(
+        button
+        for button in app.button
+        if button.label == "Сформировать отчёт по ГОСТ (уточнённый)"
+    ).click().run(timeout=20)
+    assert app.session_state["gost_report_include_extended_kinematics"] is True

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from docx import Document
+from docx.oxml.ns import qn
 
 from src.reports.docx_report import (
     COMPLIES_COLOR,
@@ -34,3 +35,4 @@ def test_compliance_statuses_are_bold_and_colored() -> None:
         run = cell.paragraphs[0].runs[0]
         assert run.bold is True
         assert str(run.font.color.rgb) == expected[cell.text]
+        assert cell._tc.get_or_add_tcPr().find(qn("w:noWrap")) is not None

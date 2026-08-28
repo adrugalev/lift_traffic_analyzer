@@ -150,6 +150,36 @@ def test_gost_normative_calculation_is_enabled() -> None:
     } <= {trace.formula_id for trace in result.formulas}
 
 
+def test_strict_gost_kinematics_uses_formula_8_only() -> None:
+    project = ProjectService.create_default()
+    elevator = project.elevator_groups[0].elevators[0]
+    result = AnalyticEngine().calculate_normative(
+        project,
+        include_extended_kinematics=False,
+    )
+
+    formula_ids = {trace.formula_id for trace in result.formulas}
+    assert result.metric("adjacent_floor_peak_speed").value == pytest.approx(
+        elevator.speed_mps
+    )
+    nominal_time = next(
+        trace.result
+        for trace in result.formulas
+        if trace.formula_id == "gost_adjacent_floor_time"
+    )
+    assert result.metric("adjacent_floor_profile_time").value == pytest.approx(
+        nominal_time
+    )
+    assert "gost_adjacent_floor_time" in formula_ids
+    assert "gost_adjacent_floor_profile_time" not in formula_ids
+    assert "kinematic_acceleration_distance" not in formula_ids
+    assert "kinematic_maximum_speed" not in formula_ids
+    assert not any(
+        message.code == "NOMINAL_SPEED_NOT_REACHED_ADJACENT_FLOOR"
+        for message in result.messages
+    )
+
+
 def test_formula_trace_symbols_exist_in_reference_tables() -> None:
     """Подстановки расчёта используют те же обозначения, что и справочник."""
 

@@ -61,6 +61,54 @@ def _elevators_from_editor(
     return elevators
 
 
+def _project_with_editor_elevators(
+    project,
+    edited: pd.DataFrame,
+    original_elevators: list[Elevator],
+):
+    """Возвращает проект с единой группой и лифтами из редактора."""
+
+    if edited.empty:
+        raise ValueError("Добавьте хотя бы один лифт.")
+    candidate = project.model_copy(deep=True)
+    original_group = candidate.elevator_groups[0]
+    elevators = _elevators_from_editor(
+        edited.to_dict("records"),
+        original_elevators,
+    )
+    floor_numbers = sorted(floor.number for floor in candidate.floors)
+    main_floor = next(
+        (
+            floor.number
+            for floor in candidate.floors
+            if floor.is_main_entrance
+        ),
+        floor_numbers[0],
+    )
+    travel_height = (
+        max(floor.elevation_m for floor in candidate.floors)
+        - min(floor.elevation_m for floor in candidate.floors)
+    )
+    for elevator in elevators:
+        elevator.stops_count = len(floor_numbers)
+        elevator.travel_height_m = travel_height
+    unified_group = ElevatorGroup(
+        **{
+            **original_group.model_dump(),
+            "name": "Лифты",
+            "service_zone_name": "Все этажи",
+            "main_floor": main_floor,
+            "served_floors": floor_numbers,
+            "express_zone": False,
+            "elevators": elevators,
+        }
+    )
+    candidate.elevator_groups = [unified_group]
+    for floor in candidate.floors:
+        floor.served_by_group_ids = [unified_group.id]
+    return candidate, elevators
+
+
 configure_page("Лифты")
 project = ensure_session()
 st.title("3. Лифты")
@@ -91,13 +139,40 @@ else:
         "elevators_editor_frame", pd.DataFrame(project_elevator_rows)
     )
 
-if st.button(
-    "Добавить лифт",
-    help=(
-        "Добавляет новую строку, продолжает нумерацию наименования и копирует "
-        "параметры предыдущего лифта."
-    ),
-):
+add_column, selector_column, delete_column = st.columns(
+    [1, 2, 1], vertical_alignment="bottom"
+)
+with add_column:
+    add_elevator = st.button(
+        "Добавить лифт",
+        help=(
+            "Добавляет новую строку, продолжает нумерацию наименования и копирует "
+            "параметры предыдущего лифта."
+        ),
+    )
+with selector_column:
+    elevators_to_delete = st.multiselect(
+        "Лифты для удаления",
+        options=list(range(len(editor_frame))),
+        format_func=lambda index: str(editor_frame.iloc[index]["Наименование"]),
+        key="elevators_to_delete",
+        placeholder="Выберите лифты",
+        help="Отметьте один или несколько лифтов, которые требуется удалить.",
+    )
+with delete_column:
+    delete_elevator = st.button(
+        "Удалить",
+        disabled=(
+            not elevators_to_delete
+            or len(elevators_to_delete) >= len(editor_frame)
+        ),
+        help=(
+            "Удаляет все отмеченные лифты. В проекте должен оставаться хотя бы "
+            "один лифт."
+        ),
+    )
+
+if add_elevator:
     expanded = pd.concat([editor_frame, pd.DataFrame([{}])], ignore_index=True)
     try:
         expanded = normalize_elevator_editor_frame(
@@ -110,6 +185,50 @@ if st.button(
         st.session_state.elevators_editor_frame = expanded.copy()
         st.session_state.elevators_editor_revision = editor_revision + 1
         st.rerun()
+
+if delete_elevator and elevators_to_delete:
+    try:
+        delete_indices = set(elevators_to_delete)
+        if len(delete_indices) >= len(editor_frame):
+            raise ValueError("В проекте должен оставаться хотя бы один лифт.")
+        deleted_names = [
+            str(editor_frame.iloc[index]["Наименование"])
+            for index in sorted(delete_indices)
+        ]
+        reduced = editor_frame.drop(
+            editor_frame.index[list(delete_indices)]
+        ).reset_index(
+            drop=True,
+        )
+        remaining_originals = [
+            elevator
+            for index, elevator in enumerate(existing_elevators)
+            if index not in delete_indices
+        ]
+        candidate, elevators = _project_with_editor_elevators(
+            project,
+            reduced,
+            remaining_originals,
+        )
+        update_project(candidate)
+        saved_frame = pd.DataFrame(
+            [elevator_to_editor_row(elevator) for elevator in elevators]
+        )
+        st.session_state.elevators_editor_pending = saved_frame.copy()
+        st.session_state.elevators_editor_frame = saved_frame.copy()
+        st.session_state.elevators_editor_previous = saved_frame.copy()
+        st.session_state.elevators_editor_revision = editor_revision + 1
+        st.session_state.pop("elevators_to_delete", None)
+        if len(deleted_names) == 1:
+            deletion_notice = f"Лифт «{deleted_names[0]}» удалён."
+        else:
+            deletion_notice = "Удалены лифты: " + ", ".join(
+                f"«{name}»" for name in deleted_names
+            ) + "."
+        st.session_state.elevator_deleted_notice = deletion_notice
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Не удалось удалить лифт: {exc}")
 
 display_frame = editor_frame.copy()
 for decimal_column in ELEVATOR_DECIMAL_COLUMNS:
@@ -286,6 +405,8 @@ st.caption(
 
 if st.session_state.pop("elevators_saved_notice", False):
     st.success("Лифты сохранены.")
+if notice := st.session_state.pop("elevator_deleted_notice", None):
+    st.success(notice)
 
 with st.expander("Массовое заполнение параметров лифтов"):
     template_name = st.selectbox(
@@ -317,44 +438,11 @@ if st.button(
     ),
 ):
     try:
-        if edited.empty:
-            raise ValueError("Добавьте хотя бы один лифт.")
-        candidate = project.model_copy(deep=True)
-        original = candidate.elevator_groups[0]
-        elevators = _elevators_from_editor(
-            edited.to_dict("records"),
+        candidate, elevators = _project_with_editor_elevators(
+            project,
+            edited,
             existing_elevators,
         )
-        floor_numbers = sorted(floor.number for floor in candidate.floors)
-        main_floor = next(
-            (
-                floor.number
-                for floor in candidate.floors
-                if floor.is_main_entrance
-            ),
-            floor_numbers[0],
-        )
-        travel_height = (
-            max(floor.elevation_m for floor in candidate.floors)
-            - min(floor.elevation_m for floor in candidate.floors)
-        )
-        for elevator in elevators:
-            elevator.stops_count = len(floor_numbers)
-            elevator.travel_height_m = travel_height
-        unified_group = ElevatorGroup(
-            **{
-                **original.model_dump(),
-                "name": "Лифты",
-                "service_zone_name": "Все этажи",
-                "main_floor": main_floor,
-                "served_floors": floor_numbers,
-                "express_zone": False,
-                "elevators": elevators,
-            }
-        )
-        candidate.elevator_groups = [unified_group]
-        for floor in candidate.floors:
-            floor.served_by_group_ids = [unified_group.id]
         update_project(candidate)
         st.session_state.elevators_editor_pending = pd.DataFrame(
             [elevator_to_editor_row(elevator) for elevator in elevators]

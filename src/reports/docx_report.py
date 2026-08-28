@@ -28,6 +28,8 @@ DOES_NOT_COMPLY_COLOR = "C00000"
 
 def _set_cell_shading(cell: object, fill: str) -> None:
     tc_pr = cell._tc.get_or_add_tcPr()
+    for existing in tc_pr.findall(qn("w:shd")):
+        tc_pr.remove(existing)
     shading = OxmlElement("w:shd")
     shading.set(qn("w:fill"), fill)
     tc_pr.append(shading)
@@ -60,6 +62,11 @@ def _style_compliance_cell(cell: object, value: object) -> None:
     }.get(status)
     if color is None:
         return
+    cell_properties = cell._tc.get_or_add_tcPr()
+    no_wrap = cell_properties.find(qn("w:noWrap"))
+    if no_wrap is None:
+        no_wrap = OxmlElement("w:noWrap")
+        cell_properties.append(no_wrap)
     for paragraph in cell.paragraphs:
         for run in paragraph.runs:
             run.font.bold = True
