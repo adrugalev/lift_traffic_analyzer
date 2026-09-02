@@ -434,6 +434,45 @@ def group_handling_capacity(
     return 300.0 * car_passengers * elevator_count / round_trip_time_s
 
 
+def mixed_group_interval(individual_intervals_s: list[float]) -> float:
+    """Инженерно объединяет интервалы кабин неоднородной группы.
+
+    Эта зависимость напрямую не опубликована в ГОСТ 34758-2021. Для отдельной
+    кабины её интервал равен времени кругового рейса, а групповой интервал
+    принимается как сумма индивидуальных интервалов, делённая на квадрат числа
+    кабин.
+    """
+
+    if not individual_intervals_s or any(
+        interval <= 0 for interval in individual_intervals_s
+    ):
+        raise ValueError("Индивидуальные интервалы кабин должны быть положительными.")
+    elevator_count = len(individual_intervals_s)
+    return sum(individual_intervals_s) / elevator_count**2
+
+
+def mixed_group_handling_capacity(
+    car_passengers: list[float],
+    individual_intervals_s: list[float],
+) -> float:
+    """Суммирует пятиминутные провозные способности отдельных кабин."""
+
+    if len(car_passengers) != len(individual_intervals_s) or not car_passengers:
+        raise ValueError("Для каждой кабины должны быть заданы вместимость и интервал.")
+    if any(passengers <= 0 for passengers in car_passengers) or any(
+        interval <= 0 for interval in individual_intervals_s
+    ):
+        raise ValueError("Вместимости и интервалы кабин должны быть положительными.")
+    return sum(
+        300.0 * passengers / interval
+        for passengers, interval in zip(
+            car_passengers,
+            individual_intervals_s,
+            strict=True,
+        )
+    )
+
+
 def handling_capacity_percent(handling_capacity_5min: float, population: float) -> float:
     """ГОСТ 34758-2021, формула (6)."""
 
@@ -489,6 +528,7 @@ class AnalyticEngine:
         group_id: str | None = None,
         *,
         include_extended_kinematics: bool = True,
+        include_mixed_capacity: bool = False,
     ) -> CalculationResult:
         """Выполняет расчётный метод ГОСТ 34758-2021 в его области применимости."""
 
@@ -572,6 +612,7 @@ class AnalyticEngine:
             "start_brake_allowance_s",
         )
         reference_elevator = group.elevators[0]
+        heterogeneous_group = False
         for elevator in group.elevators[1:]:
             if any(
                 not math.isclose(
@@ -582,8 +623,10 @@ class AnalyticEngine:
                 )
                 for parameter in relevant_parameters
             ):
-                scope_errors.append("лифтовая группа неоднородна")
+                heterogeneous_group = True
                 break
+        if heterogeneous_group and not include_mixed_capacity:
+            scope_errors.append("лифтовая группа неоднородна")
 
         elevations = [floor.elevation_m for floor in normative_floors]
         floor_steps = [
@@ -707,6 +750,7 @@ class AnalyticEngine:
         parking_floor_profile_time = 0.0
         parking_stop_time = 0.0
         parking_round_trip_addition = 0.0
+        parking_depths: list[float] = []
         round_trip_time = gost_round_trip_time
         if parking_extension_active:
             parking_depths = sorted(
@@ -775,17 +819,156 @@ class AnalyticEngine:
                     + parking_stops * parking_stop_time
                 )
                 round_trip_time += parking_round_trip_addition
-        interval = normative_interval(round_trip_time, group.elevator_count)
-        handling_capacity = group_handling_capacity(
-            car_passengers, group.elevator_count, round_trip_time
-        )
+
+        individual_cycles: list[dict[str, float | str]] = []
+        if include_mixed_capacity:
+            for individual_elevator in group.elevators:
+                individual_nominal_capacity = nominal_passengers_from_capacity(
+                    individual_elevator.capacity_kg
+                )
+                individual_car_passengers = calculated_capacity(
+                    individual_nominal_capacity,
+                    individual_elevator.load_factor,
+                )
+                individual_transfer_time = passenger_transfer_time(
+                    individual_elevator.door_width_m
+                )
+                individual_probable_stops = probable_stops_uniform(
+                    destination_count,
+                    individual_car_passengers,
+                )
+                individual_reversal = expected_highest_reversal(
+                    destination_count,
+                    individual_car_passengers,
+                )
+                individual_floor_nominal_time = adjacent_floor_nominal_time(
+                    average_floor_height,
+                    individual_elevator.speed_mps,
+                )
+                individual_floor_profile_time = (
+                    jerk_limited_travel_time(
+                        average_floor_height,
+                        individual_elevator.speed_mps,
+                        individual_elevator.acceleration_mps2,
+                        individual_elevator.deceleration_mps2,
+                        individual_elevator.jerk_mps3,
+                    )
+                    if include_extended_kinematics
+                    else individual_floor_nominal_time
+                )
+                individual_stop_time = normative_stop_time(
+                    individual_elevator.door_close_time_s,
+                    individual_elevator.start_brake_allowance_s,
+                    individual_floor_profile_time,
+                    individual_elevator.pre_open_time_s,
+                    individual_elevator.door_open_time_s,
+                    individual_elevator.door_dwell_time_s,
+                    individual_floor_nominal_time,
+                )
+                individual_gost_round_trip = normative_round_trip_time(
+                    individual_reversal,
+                    individual_floor_nominal_time,
+                    individual_probable_stops,
+                    individual_stop_time,
+                    individual_car_passengers,
+                    individual_transfer_time,
+                )
+                individual_round_trip = individual_gost_round_trip
+                if parking_extension_active and parking_depths:
+                    individual_parking_stops = probable_parking_stops(
+                        len(parking_depths),
+                        individual_car_passengers,
+                        normative_parking_share,
+                    )
+                    individual_parking_depth = expected_parking_depth(
+                        parking_depths,
+                        individual_car_passengers,
+                        normative_parking_share,
+                    )
+                    individual_parking_steps = [
+                        parking_depths[0],
+                        *[
+                            right - left
+                            for left, right in zip(
+                                parking_depths,
+                                parking_depths[1:],
+                                strict=False,
+                            )
+                        ],
+                    ]
+                    individual_parking_height = mean(individual_parking_steps)
+                    individual_parking_nominal_time = adjacent_floor_nominal_time(
+                        individual_parking_height,
+                        individual_elevator.speed_mps,
+                    )
+                    individual_parking_profile_time = jerk_limited_travel_time(
+                        individual_parking_height,
+                        individual_elevator.speed_mps,
+                        individual_elevator.acceleration_mps2,
+                        individual_elevator.deceleration_mps2,
+                        individual_elevator.jerk_mps3,
+                    )
+                    individual_parking_stop_time = normative_stop_time(
+                        individual_elevator.door_close_time_s,
+                        individual_elevator.start_brake_allowance_s,
+                        individual_parking_profile_time,
+                        individual_elevator.pre_open_time_s,
+                        individual_elevator.door_open_time_s,
+                        individual_elevator.door_dwell_time_s,
+                        individual_parking_nominal_time,
+                    )
+                    individual_round_trip += (
+                        2.0
+                        * individual_parking_depth
+                        / individual_elevator.speed_mps
+                        + individual_parking_stops
+                        * individual_parking_stop_time
+                    )
+                individual_cycles.append(
+                    {
+                        "name": individual_elevator.name,
+                        "capacity_kg": individual_elevator.capacity_kg,
+                        "car_passengers": float(individual_car_passengers),
+                        "round_trip_time": individual_round_trip,
+                        "handling_capacity": (
+                            300.0
+                            * individual_car_passengers
+                            / individual_round_trip
+                        ),
+                    }
+                )
+
+            individual_intervals = [
+                float(item["round_trip_time"]) for item in individual_cycles
+            ]
+            individual_capacities = [
+                float(item["car_passengers"]) for item in individual_cycles
+            ]
+            interval = mixed_group_interval(individual_intervals)
+            handling_capacity = mixed_group_handling_capacity(
+                individual_capacities,
+                individual_intervals,
+            )
+            # Для справочного показателя кругового рейса используется среднее
+            # индивидуальных значений. Критерии интервала и провозной способности
+            # рассчитываются только по формулам неоднородной группы выше.
+            round_trip_time = mean(individual_intervals)
+        else:
+            interval = normative_interval(round_trip_time, group.elevator_count)
+            handling_capacity = group_handling_capacity(
+                car_passengers, group.elevator_count, round_trip_time
+            )
         specific_capacity = handling_capacity_percent(handling_capacity, population)
         required_percent = float(criteria["traffic_percent_5min_min"])
         required_demand = population * required_percent / 100.0
         user_demand = population * scenario.population_percent_5min / 100.0
         design_demand = max(required_demand, user_demand)
         design_percent = design_demand * 100.0 / population
-        full_height_time = travel_height / elevator.speed_mps
+        full_height_time = (
+            max(travel_height / item.speed_mps for item in group.elevators)
+            if include_mixed_capacity
+            else travel_height / elevator.speed_mps
+        )
         interval_limit = float(criteria["interval_s_max"])
         full_height_min = float(criteria["full_height_time_s_min"])
         full_height_max = float(criteria["full_height_time_s_max"])
@@ -898,6 +1081,98 @@ class AnalyticEngine:
                     "",
                 )
             )
+
+        if include_mixed_capacity:
+            individual_intervals = [
+                float(item["round_trip_time"]) for item in individual_cycles
+            ]
+            individual_capacities = [
+                float(item["car_passengers"]) for item in individual_cycles
+            ]
+            individual_handling = [
+                float(item["handling_capacity"]) for item in individual_cycles
+            ]
+            interval_terms = " + ".join(
+                f"{value:.3f}" for value in individual_intervals
+            )
+            capacity_terms = " + ".join(
+                f"{value:.3f}" for value in individual_handling
+            )
+            group_result_traces = [
+                self._trace(
+                    "mixed_group_interval",
+                    (
+                        f"tи,разн ≈ ({interval_terms}) / "
+                        f"{group.elevator_count}² = {interval:.3f}"
+                    ),
+                    {
+                        "T1…Tn": individual_intervals,
+                        "n": group.elevator_count,
+                    },
+                    {
+                        "лифты": [
+                            {
+                                "наименование": item["name"],
+                                "грузоподъёмность_кг": item["capacity_kg"],
+                                "индивидуальный_интервал_с": item[
+                                    "round_trip_time"
+                                ],
+                            }
+                            for item in individual_cycles
+                        ]
+                    },
+                    interval,
+                    (
+                        "Формула инженерного расширения для неоднородной группы; "
+                        "напрямую не опубликована в ГОСТ 34758-2021."
+                    ),
+                ),
+                self._trace(
+                    "mixed_group_handling_capacity",
+                    f"P5,разн = {capacity_terms} = {handling_capacity:.3f}",
+                    {
+                        "Pк,i": individual_capacities,
+                        "Ti": individual_intervals,
+                    },
+                    {
+                        "индивидуальные_провозные_способности": (
+                            individual_handling
+                        )
+                    },
+                    handling_capacity,
+                    (
+                        "Провозные способности кабин суммированы; методика "
+                        "не опубликована напрямую в ГОСТ 34758-2021."
+                    ),
+                ),
+            ]
+        else:
+            group_result_traces = [
+                self._trace(
+                    "gost_interval",
+                    f"tи = {round_trip_time:.3f} / {group.elevator_count}",
+                    {"T": round_trip_time, "Nл": group.elevator_count},
+                    {},
+                    interval,
+                    "",
+                ),
+                self._trace(
+                    "gost_group_handling_capacity",
+                    (
+                        f"P5 = 300 × {car_passengers:.3f} × "
+                        f"{group.elevator_count} / {round_trip_time:.3f}"
+                    ),
+                    {
+                        "Pк": car_passengers,
+                        "Nл": group.elevator_count,
+                        "T": round_trip_time,
+                        "tи": interval,
+                    },
+                    {},
+                    handling_capacity,
+                    "",
+                ),
+            ]
 
         traces = [
             self._trace(
@@ -1069,30 +1344,7 @@ class AnalyticEngine:
                 if parking_extension_active
                 else []
             ),
-            self._trace(
-                "gost_interval",
-                f"tи = {round_trip_time:.3f} / {group.elevator_count}",
-                {"T": round_trip_time, "Nл": group.elevator_count},
-                {},
-                interval,
-                "",
-            ),
-            self._trace(
-                "gost_group_handling_capacity",
-                (
-                    f"P5 = 300 × {car_passengers:.3f} × {group.elevator_count} "
-                    f"/ {round_trip_time:.3f}"
-                ),
-                {
-                    "Pк": car_passengers,
-                    "Nл": group.elevator_count,
-                    "T": round_trip_time,
-                    "tи": interval,
-                },
-                {},
-                handling_capacity,
-                "",
-            ),
+            *group_result_traces,
             self._trace(
                 "gost_handling_capacity_percent",
                 f"%P5 = {handling_capacity:.3f} × 100 / {population:.3f}",
@@ -1278,13 +1530,21 @@ class AnalyticEngine:
             ),
             MetricResult(
                 key="cycle_time",
-                title_ru="Время кругового рейса",
+                title_ru=(
+                    "Среднее время кругового рейса кабин"
+                    if include_mixed_capacity
+                    else "Время кругового рейса"
+                ),
                 value=round_trip_time,
                 unit="с",
                 method=(
-                    "ГОСТ 34758-2021 с инженерной поправкой паркинга"
-                    if parking_extension_active
-                    else "ГОСТ 34758-2021"
+                    "ГОСТ 34758-2021 с инженерным расчётом неоднородной группы"
+                    if include_mixed_capacity
+                    else (
+                        "ГОСТ 34758-2021 с инженерной поправкой паркинга"
+                        if parking_extension_active
+                        else "ГОСТ 34758-2021"
+                    )
                 ),
             ),
             *parking_metrics,
@@ -1293,7 +1553,11 @@ class AnalyticEngine:
                 title_ru="Интервал движения лифтов",
                 value=interval,
                 unit="с",
-                method="ГОСТ 34758-2021",
+                method=(
+                    "ГОСТ 34758-2021 с инженерным объединением интервалов кабин"
+                    if include_mixed_capacity
+                    else "ГОСТ 34758-2021"
+                ),
                 compliance=status(interval <= interval_limit),
                 target_value=interval_limit,
                 target_description=f"≤ {interval_limit:.1f} с",
@@ -1303,7 +1567,11 @@ class AnalyticEngine:
                 title_ru="Провозная способность группы за 5 минут",
                 value=handling_capacity,
                 unit="пасс./5 мин",
-                method="ГОСТ 34758-2021",
+                method=(
+                    "ГОСТ 34758-2021; сумма результатов отдельных кабин"
+                    if include_mixed_capacity
+                    else "ГОСТ 34758-2021"
+                ),
                 compliance=status(handling_capacity >= design_demand),
                 target_value=design_demand,
                 target_description=f"≥ {design_demand:.1f} пасс./5 мин",
@@ -1363,6 +1631,22 @@ class AnalyticEngine:
         ]
 
         messages = list(validation_messages)
+        if include_mixed_capacity:
+            messages.append(
+                DiagnosticMessage(
+                    severity=MessageSeverity.WARNING,
+                    code="MIXED_CAPACITY_ENGINEERING_METHOD_APPLIED",
+                    text=(
+                        "Применён расчёт лифтов разной грузоподъёмности. Для "
+                        "каждой кабины отдельно рассчитаны вместимость и интервал; "
+                        "интервал группы принят как сумма индивидуальных интервалов, "
+                        "делённая на квадрат количества лифтов, а провозная "
+                        "способность — как сумма провозных способностей кабин. "
+                        "Эта методика напрямую не опубликована в ГОСТ 34758-2021 "
+                        "и используется как инженерное расширение расчёта по ГОСТ."
+                    ),
+                )
+            )
         if include_extended_kinematics and not nominal_speed_reached:
             messages.append(
                 DiagnosticMessage(
@@ -1464,12 +1748,21 @@ class AnalyticEngine:
             )
         )
 
-        return CalculationResult(
-            method=(
+        if include_mixed_capacity:
+            method = (
+                "Расчётный метод ГОСТ 34758-2021 "
+                "(с учётом лифтов разной грузоподъёмности)"
+            )
+            if parking_extension_active:
+                method = method[:-1] + " и паркинга)"
+        elif parking_extension_active:
+            method = (
                 "Расчётный метод ГОСТ 34758-2021 с инженерным учётом паркинга"
-                if parking_extension_active
-                else "Расчётный метод ГОСТ 34758-2021"
-            ),
+            )
+        else:
+            method = "Расчётный метод ГОСТ 34758-2021"
+        return CalculationResult(
+            method=method,
             calculation_basis="GOST_34758_2021_CLAUSE_7",
             group_id=group.id,
             standard=StandardSelection.GOST_34758_2021.value,

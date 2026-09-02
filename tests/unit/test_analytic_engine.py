@@ -6,6 +6,7 @@ import pytest
 
 from src.engines.analytic_engine import (
     AnalyticEngine,
+    NormativeConfigurationError,
     adjacent_floor_nominal_time,
     calculated_capacity,
     expected_parking_depth,
@@ -17,6 +18,8 @@ from src.engines.analytic_engine import (
     jerk_limited_transition_distance,
     jerk_limited_travel_phases,
     jerk_limited_travel_time,
+    mixed_group_handling_capacity,
+    mixed_group_interval,
     nominal_passengers_from_capacity,
     normative_interval,
     normative_round_trip_time,
@@ -351,3 +354,71 @@ def test_gost_stop_interval_and_capacity_formulas() -> None:
     assert interval == pytest.approx(27.4833, rel=1e-4)
     assert capacity == pytest.approx(142.996, rel=1e-4)
     assert handling_capacity_percent(capacity, 1092) == pytest.approx(13.095, rel=1e-3)
+
+
+def test_mixed_group_aggregation_formulas() -> None:
+    individual_intervals = [120.0, 180.0]
+    car_passengers = [8.0, 12.0]
+
+    assert mixed_group_interval(individual_intervals) == pytest.approx(75.0)
+    assert mixed_group_handling_capacity(
+        car_passengers,
+        individual_intervals,
+    ) == pytest.approx(40.0)
+
+
+def test_mixed_capacity_mode_calculates_each_car_separately() -> None:
+    project = ProjectService.create_default()
+    group = project.elevator_groups[0]
+    group.elevators[1].capacity_kg = 1275.0
+    group.elevators[1].nominal_passengers = 17
+
+    with pytest.raises(NormativeConfigurationError, match="неоднородна"):
+        AnalyticEngine().calculate_normative(
+            project,
+            include_extended_kinematics=False,
+        )
+
+    individual_results = []
+    for elevator in group.elevators:
+        individual_project = project.model_copy(deep=True)
+        individual_project.elevator_groups[0].elevators = [
+            elevator.model_copy(deep=True)
+        ]
+        individual_results.append(
+            AnalyticEngine().calculate_normative(
+                individual_project,
+                include_extended_kinematics=False,
+            )
+        )
+
+    mixed_result = AnalyticEngine().calculate_normative(
+        project,
+        include_extended_kinematics=False,
+        include_mixed_capacity=True,
+    )
+    expected_interval = sum(
+        result.metric("interval").value for result in individual_results
+    ) / len(individual_results) ** 2
+    expected_capacity = sum(
+        result.metric("handling_capacity_5min").value
+        for result in individual_results
+    )
+
+    assert mixed_result.metric("interval").value == pytest.approx(expected_interval)
+    assert mixed_result.metric("handling_capacity_5min").value == pytest.approx(
+        expected_capacity
+    )
+    assert mixed_result.calculation_basis == "GOST_34758_2021_CLAUSE_7"
+    assert mixed_result.method == (
+        "Расчётный метод ГОСТ 34758-2021 "
+        "(с учётом лифтов разной грузоподъёмности)"
+    )
+    assert {
+        "mixed_group_interval",
+        "mixed_group_handling_capacity",
+    } <= {trace.formula_id for trace in mixed_result.formulas}
+    assert any(
+        message.code == "MIXED_CAPACITY_ENGINEERING_METHOD_APPLIED"
+        for message in mixed_result.messages
+    )

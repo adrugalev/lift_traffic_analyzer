@@ -339,6 +339,36 @@
         "tи": {"title_ru": "Интервал движения", "unit": "с"}
       }
     },
+    "mixed_group_interval": {
+      "title_ru": "Интервал неоднородной группы лифтов",
+      "standard": "Инженерное расширение расчёта по ГОСТ 34758-2021 (не формула ГОСТ)",
+      "clause": "методика для лифтов разной грузоподъёмности",
+      "expression": "tи,разн ≈ (T1 + T2 + ... + Tn) / n²",
+      "implementation": "src.engines.analytic_engine.mixed_group_interval",
+      "unit": "с",
+      "status": "engineering_extension",
+      "variables": {
+        "tи,разн": {"title_ru": "Интервал неоднородной группы", "unit": "с"},
+        "T1…Tn": {"title_ru": "Индивидуальные интервалы (круговые рейсы) кабин", "unit": "с"},
+        "n": {"title_ru": "Количество лифтов в группе", "unit": "шт."}
+      }
+    },
+    "mixed_group_handling_capacity": {
+      "title_ru": "Провозная способность неоднородной группы",
+      "standard": "Инженерное расширение расчёта по ГОСТ 34758-2021 (не формула ГОСТ)",
+      "clause": "суммирование результатов кабин разной грузоподъёмности",
+      "expression": "P5,разн = Σ[i=1..n] (300 × Pк,i / Ti)",
+      "implementation": "src.engines.analytic_engine.mixed_group_handling_capacity",
+      "unit": "пасс./5 мин",
+      "status": "engineering_extension",
+      "variables": {
+        "P5,разн": {"title_ru": "Провозная способность неоднородной группы", "unit": "пасс./5 мин"},
+        "Pк,i": {"title_ru": "Расчётная вместимость i-й кабины", "unit": "пасс."},
+        "Ti": {"title_ru": "Индивидуальный интервал i-й кабины", "unit": "с"},
+        "i": {"title_ru": "Индекс кабины", "unit": "—"},
+        "n": {"title_ru": "Количество лифтов", "unit": "шт."}
+      }
+    },
     "gost_handling_capacity_percent": {
       "title_ru": "Провозная способность в процентах от заселённости",
       "standard": "ГОСТ 34758-2021",

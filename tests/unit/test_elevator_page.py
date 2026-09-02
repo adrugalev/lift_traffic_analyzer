@@ -10,7 +10,7 @@ from src import ui
 from src.services.project_service import ProjectService
 
 
-def test_page_saves_all_lifts_as_one_implicit_group(monkeypatch) -> None:
+def test_page_autosaves_table_as_one_implicit_group(monkeypatch) -> None:
     monkeypatch.setattr(ui, "render_navigation", lambda: None)
     project = ProjectService.create_default()
     second_group = project.elevator_groups[0].model_copy(deep=True)
@@ -38,18 +38,22 @@ def test_page_saves_all_lifts_as_one_implicit_group(monkeypatch) -> None:
     assert "elevators_doors_editor" not in page_text
     assert 'key=f"elevators_editor_{editor_revision}"' in page_text
 
-    next(item for item in app.button if item.label == "Сохранить лифты").click()
+    edited = app.dataframe[0].value.copy()
+    edited.loc[0, "Г/п, кг"] = 630
+    app.session_state["elevators_editor_pending"] = edited
     app.run(timeout=20)
 
     saved = app.session_state["project"]
     assert not app.exception
     assert len(saved.elevator_groups) == 1
     assert len(saved.elevator_groups[0].elevators) == 4
+    assert saved.elevator_groups[0].elevators[0].capacity_kg == 630
     assert saved.elevator_groups[0].served_floors == list(range(1, 11))
     assert all(
         floor.served_by_group_ids == [saved.elevator_groups[0].id]
         for floor in saved.floors
     )
+    assert "Сохранить лифты" not in [item.label for item in app.button]
 
 
 def test_page_deletes_multiple_lifts_and_keeps_one_minimum(monkeypatch) -> None:

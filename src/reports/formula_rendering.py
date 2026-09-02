@@ -352,6 +352,32 @@ def _formula_specs() -> dict[str, MathSpec]:
                 _v("t", "и"),
             ),
         ),
+        "mixed_group_interval": _seq(
+            _v("t", "и,разн"),
+            _op(" ≈ "),
+            _frac(
+                _seq(
+                    _v("T", "1"),
+                    _op(" + "),
+                    _v("T", "2"),
+                    _op(" + … + "),
+                    _v("T", "n"),
+                ),
+                _sup(_v("n"), two),
+            ),
+        ),
+        "mixed_group_handling_capacity": _seq(
+            _v("P", "5,разн"),
+            _op(" = "),
+            _sum(
+                _seq(_v("i"), _op(" = "), one),
+                _v("n"),
+                _frac(
+                    _seq(three_hundred, _op(" · "), _v("P", "к,i")),
+                    _v("T", "i"),
+                ),
+            ),
+        ),
         "gost_handling_capacity_percent": _seq(
             _op("%"),
             _v("P", "5"),
@@ -578,6 +604,14 @@ PDF_FORMULAS = {
     "gost_group_handling_capacity": (
         "P<sub>5</sub> = 300 · P<sub>к</sub> · N<sub>л</sub> ⁄ T "
         "= 300 · P<sub>к</sub> ⁄ t<sub>и</sub>"
+    ),
+    "mixed_group_interval": (
+        "t<sub>и,разн</sub> ≈ (T<sub>1</sub> + T<sub>2</sub> + … + "
+        "T<sub>n</sub>) ⁄ n<super>2</super>"
+    ),
+    "mixed_group_handling_capacity": (
+        "P<sub>5,разн</sub> = Σ<sub>i=1</sub><super>n</super> "
+        "(300 · P<sub>к,i</sub> ⁄ T<sub>i</sub>)"
     ),
     "gost_handling_capacity_percent": (
         "%P<sub>5</sub> = P<sub>5</sub> · 100 ⁄ A"

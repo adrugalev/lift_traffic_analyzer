@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from io import BytesIO
 from xml.sax.saxutils import escape
@@ -25,6 +26,11 @@ from reportlab.platypus import (
 )
 
 from src import APP_NAME, __version__
+from src.engines.analytic_engine import (
+    calculated_capacity,
+    nominal_passengers_from_capacity,
+)
+from src.models.elevator import ElevatorGroup
 from src.models.project import Project
 from src.models.results import CalculationResult, ComplianceStatus
 from src.reports.docx_report import (
@@ -86,6 +92,67 @@ def _format_floor_marking(project: Project, floor_number: int) -> str:
     return "; ".join(markers)
 
 
+def _uses_mixed_capacity(analytic: CalculationResult) -> bool:
+    """Определяет применение покабинного расчёта неоднородной группы."""
+
+    return any(
+        trace.formula_id == "mixed_group_interval"
+        for trace in analytic.formulas
+    )
+
+
+def _lift_count_text(count: int) -> str:
+    remainder_100 = count % 100
+    remainder_10 = count % 10
+    if 11 <= remainder_100 <= 14:
+        noun = "лифтов"
+    elif remainder_10 == 1:
+        noun = "лифт"
+    elif 2 <= remainder_10 <= 4:
+        noun = "лифта"
+    else:
+        noun = "лифтов"
+    return f"{count} {noun}"
+
+
+def _mixed_capacity_values(group: ElevatorGroup) -> tuple[str, str, str]:
+    """Формирует сводку вместимостей по всем классам грузоподъёмности."""
+
+    capacity_counts = Counter(round(item.capacity_kg, 6) for item in group.elevators)
+    capacity_parts: list[str] = []
+    nominal_parts: list[str] = []
+    calculated_parts: list[str] = []
+    for capacity_kg, count in sorted(capacity_counts.items()):
+        elevators = [
+            item
+            for item in group.elevators
+            if round(item.capacity_kg, 6) == capacity_kg
+        ]
+        count_text = _lift_count_text(count)
+        capacity_parts.append(f"{capacity_kg:.0f} кг — {count_text}")
+
+        nominal = nominal_passengers_from_capacity(capacity_kg)
+        nominal_parts.append(
+            f"{nominal} пасс. ({capacity_kg:.0f} кг — {count_text})"
+        )
+
+        calculated_counts = Counter(
+            calculated_capacity(nominal, item.load_factor)
+            for item in elevators
+        )
+        for calculated, calculated_count in sorted(calculated_counts.items()):
+            calculated_parts.append(
+                f"{calculated} пасс. ({capacity_kg:.0f} кг — "
+                f"{_lift_count_text(calculated_count)})"
+            )
+
+    return (
+        "; ".join(nominal_parts),
+        "; ".join(capacity_parts),
+        "; ".join(calculated_parts),
+    )
+
+
 def build_gost_docx_report(
     project: Project,
     analytic: CalculationResult | None,
@@ -96,6 +163,17 @@ def build_gost_docx_report(
     metrics = _metric_map(result)
     group = project.group(result.group_id)
     elevator = group.elevators[0]
+    mixed_capacity = _uses_mixed_capacity(result)
+    if mixed_capacity:
+        nominal_capacity_text, capacity_text, calculated_capacity_text = (
+            _mixed_capacity_values(group)
+        )
+    else:
+        nominal_capacity_text = f"{metrics['nominal_capacity'].value:.0f} пасс."
+        capacity_text = f"{elevator.capacity_kg:.0f} кг"
+        calculated_capacity_text = (
+            f"{metrics['actual_car_passengers'].value:.0f} пасс."
+        )
     extended_kinematics = any(
         trace.formula_id == "gost_adjacent_floor_profile_time"
         for trace in result.formulas
@@ -275,15 +353,15 @@ def build_gost_docx_report(
             ["Высота подъёма", f"{travel_height:.2f} м"],
             [
                 "Номинальная вместимость кабины",
-                f"{metrics['nominal_capacity'].value:.0f} пасс.",
+                nominal_capacity_text,
             ],
             [
                 "Номинальная грузоподъёмность кабины",
-                f"{elevator.capacity_kg:.0f} кг",
+                capacity_text,
             ],
             [
                 "Расчётная вместимость кабины",
-                f"{metrics['actual_car_passengers'].value:.0f} пасс.",
+                calculated_capacity_text,
             ],
             ["Номинальная скорость лифта", f"{elevator.speed_mps:.2f} м/с"],
             *(
@@ -463,6 +541,17 @@ def build_gost_pdf_report(
     metrics = _metric_map(result)
     group = project.group(result.group_id)
     elevator = group.elevators[0]
+    mixed_capacity = _uses_mixed_capacity(result)
+    if mixed_capacity:
+        nominal_capacity_text, capacity_text, calculated_capacity_text = (
+            _mixed_capacity_values(group)
+        )
+    else:
+        nominal_capacity_text = f"{metrics['nominal_capacity'].value:.0f} пасс."
+        capacity_text = f"{elevator.capacity_kg:.0f} кг"
+        calculated_capacity_text = (
+            f"{metrics['actual_car_passengers'].value:.0f} пасс."
+        )
     extended_kinematics = any(
         trace.formula_id == "gost_adjacent_floor_profile_time"
         for trace in result.formulas
@@ -778,15 +867,15 @@ def build_gost_pdf_report(
                 ["Высота подъёма", f"{travel_height:.2f} м"],
                 [
                     "Номинальная вместимость кабины",
-                    f"{metrics['nominal_capacity'].value:.0f} пасс.",
+                    nominal_capacity_text,
                 ],
                 [
                     "Номинальная грузоподъёмность кабины",
-                    f"{elevator.capacity_kg:.0f} кг",
+                    capacity_text,
                 ],
                 [
                     "Расчётная вместимость кабины",
-                    f"{metrics['actual_car_passengers'].value:.0f} пасс.",
+                    calculated_capacity_text,
                 ],
                 ["Номинальная скорость лифта", f"{elevator.speed_mps:.2f} м/с"],
                 *(

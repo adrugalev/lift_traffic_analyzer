@@ -40,6 +40,7 @@ def _generate_gost_exports(
     *,
     include_parking: bool,
     include_extended_kinematics: bool,
+    include_mixed_capacity: bool,
 ) -> list[str]:
     """Независимо формирует DOCX и PDF нормативного отчёта."""
 
@@ -48,6 +49,7 @@ def _generate_gost_exports(
         "gost_report_pdf",
         "gost_report_include_parking",
         "gost_report_include_extended_kinematics",
+        "gost_report_include_mixed_capacity",
     ):
         st.session_state.pop(key, None)
     errors: list[str] = []
@@ -63,6 +65,7 @@ def _generate_gost_exports(
     st.session_state.gost_report_include_extended_kinematics = (
         include_extended_kinematics
     )
+    st.session_state.gost_report_include_mixed_capacity = include_mixed_capacity
     return errors
 
 
@@ -103,6 +106,39 @@ def _parking_is_configured(project, group_id: str | None = None) -> bool:
         )
         and project.scenario().parking_incoming_share > 0
     )
+
+
+def _group_has_mixed_capacities(group) -> bool:
+    """Проверяет различие номинальных грузоподъёмностей кабин группы."""
+
+    capacities = {
+        round(float(elevator.capacity_kg), 9) for elevator in group.elevators
+    }
+    return len(capacities) > 1
+
+
+def _project_for_capacity_mode(
+    project,
+    group_id: str,
+    *,
+    include_mixed_capacity: bool,
+):
+    """Исключает различия кабин из расчётной копии, когда режим снят."""
+
+    group = project.group(group_id)
+    if include_mixed_capacity or not _group_has_mixed_capacities(group):
+        return project
+    candidate = project.model_copy(deep=True)
+    candidate_group = candidate.group(group_id)
+    reference = candidate_group.elevators[0]
+    candidate_group.elevators = [
+        reference.model_copy(
+            deep=True,
+            update={"id": elevator.id, "name": elevator.name},
+        )
+        for elevator in candidate_group.elevators
+    ]
+    return candidate
 
 
 configure_page("Расчёт и отчёт")
@@ -182,6 +218,50 @@ with methods[1]:
         ),
     )
 
+mixed_capacity_detected = _group_has_mixed_capacities(group)
+if not mixed_capacity_detected:
+    st.session_state.pop("pending_mixed_capacity_confirmation", None)
+
+confirmation_notice = st.session_state.pop("mixed_capacity_confirmation_notice", None)
+if confirmation_notice:
+    st.success(confirmation_notice)
+
+execute_normative = False
+mixed_capacity_mode = False
+if normative_clicked:
+    if mixed_capacity_detected:
+        st.session_state.pending_mixed_capacity_confirmation = True
+    else:
+        execute_normative = True
+
+if st.session_state.get("pending_mixed_capacity_confirmation", False):
+    st.warning(
+        "В группе обнаружены лифты разной грузоподъёмности. Строгая формула "
+        "ГОСТ рассчитана для однородной группы. Применить инженерную формулу "
+        "усреднения интервалов и продолжить расчёт по ГОСТ?"
+    )
+    confirmation_columns = st.columns(2)
+    apply_mixed_formula = confirmation_columns[0].button(
+        "Считать с учётом разных грузоподъёмностей",
+        type="primary",
+        use_container_width=True,
+    )
+    cancel_mixed_formula = confirmation_columns[1].button(
+        "Не считать",
+        use_container_width=True,
+    )
+    if apply_mixed_formula:
+        st.session_state.pending_mixed_capacity_confirmation = False
+        st.session_state.include_mixed_capacity_in_gost_report = True
+        execute_normative = True
+        mixed_capacity_mode = True
+    elif cancel_mixed_formula:
+        st.session_state.pending_mixed_capacity_confirmation = False
+        st.session_state.mixed_capacity_confirmation_notice = (
+            "Расчёт отменён. Параметры проекта не изменены."
+        )
+        st.rerun()
+
 if preview_clicked:
     try:
         result = engine.calculate_preview(project, group.id)
@@ -191,7 +271,7 @@ if preview_clicked:
         st.success("Предварительный расчёт выполнен.")
     except Exception as exc:
         st.error(str(exc))
-if normative_clicked:
+if execute_normative:
     try:
         normative_project = _project_for_gost(project, include_parking=True)
         strict_gost_project = _project_for_gost(project, include_parking=False)
@@ -199,6 +279,7 @@ if normative_clicked:
             strict_gost_project,
             group.id,
             include_extended_kinematics=False,
+            include_mixed_capacity=mixed_capacity_mode,
         )
         result.recommendations = RecommendationEngine.generate(result)
         parking_reference_result = None
@@ -207,6 +288,7 @@ if normative_clicked:
                 normative_project,
                 group.id,
                 include_extended_kinematics=False,
+                include_mixed_capacity=mixed_capacity_mode,
             )
             parking_reference_result.recommendations = RecommendationEngine.generate(
                 parking_reference_result
@@ -218,7 +300,14 @@ if normative_clicked:
         st.session_state.parking_reference_result = parking_reference_result
         st.session_state.gost_result_include_parking = False
         st.session_state.gost_result_include_extended_kinematics = False
-        st.success("Расчёт по ГОСТ выполнен без учёта паркинга.")
+        st.session_state.gost_result_include_mixed_capacity = mixed_capacity_mode
+        if mixed_capacity_mode:
+            st.success(
+                "Расчёт с учётом разных грузоподъёмностей выполнен. "
+                "Настройте условия ниже и отдельно сформируйте отчёт."
+            )
+        else:
+            st.success("Расчёт по ГОСТ выполнен без учёта паркинга.")
     except NormativeConfigurationError as exc:
         st.error(str(exc))
     except Exception as exc:
@@ -228,9 +317,16 @@ result = st.session_state.analytic_result
 if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
     st.subheader("Отчёт по результатам расчёта")
     parking_configured = _parking_is_configured(project, group.id)
+    mixed_capacity_mode = bool(
+        st.session_state.get("gost_result_include_mixed_capacity", False)
+    )
     if not parking_configured:
         st.session_state.include_parking_in_gost_report = False
-    report_controls = st.columns([1, 1, 1.35])
+    if not mixed_capacity_detected:
+        st.session_state.include_mixed_capacity_in_gost_report = False
+    elif "include_mixed_capacity_in_gost_report" not in st.session_state:
+        st.session_state.include_mixed_capacity_in_gost_report = mixed_capacity_mode
+    report_controls = st.columns([1, 1, 1.25, 1.35])
     with report_controls[0]:
         include_parking_in_report = st.checkbox(
             "Включать в расчёт паркинг",
@@ -256,6 +352,33 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                 "ускорения, замедления и рывка; эта модель не является формулой ГОСТ."
             ),
         )
+    with report_controls[2]:
+        include_mixed_capacity_in_report = st.checkbox(
+            "Расчёт лифтов разной грузоподъёмности",
+            key="include_mixed_capacity_in_gost_report",
+            disabled=not mixed_capacity_detected,
+            help=(
+                "Для неоднородной группы рассчитывает отдельный интервал и "
+                "провозную способность каждой кабины, затем объединяет их "
+                "по инженерной формуле усреднения."
+            ),
+        )
+    mixed_capacity_mode = include_mixed_capacity_in_report
+    no_calculation_options_selected = not any(
+        (
+            include_parking_in_report,
+            include_extended_kinematics_in_report,
+            include_mixed_capacity_in_report,
+        )
+    )
+    if mixed_capacity_detected and no_calculation_options_selected:
+        invalidate_generated_reports()
+        st.session_state.analytic_result = None
+        st.session_state.parking_reference_result = None
+        st.session_state.pop("gost_result_include_parking", None)
+        st.session_state.pop("gost_result_include_extended_kinematics", None)
+        st.session_state.pop("gost_result_include_mixed_capacity", None)
+        st.rerun()
     previous_parking_mode = bool(
         st.session_state.get("gost_result_include_parking", False)
     )
@@ -265,9 +388,13 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
             False,
         )
     )
+    previous_mixed_capacity_mode = bool(
+        st.session_state.get("gost_result_include_mixed_capacity", False)
+    )
     result_mode_changed = (
         previous_parking_mode != include_parking_in_report
         or previous_kinematics_mode != include_extended_kinematics_in_report
+        or previous_mixed_capacity_mode != mixed_capacity_mode
     )
     if result_mode_changed:
         try:
@@ -281,12 +408,18 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                     project,
                     include_parking=include_parking_in_report,
                 )
+            selected_project = _project_for_capacity_mode(
+                selected_project,
+                group.id,
+                include_mixed_capacity=mixed_capacity_mode,
+            )
             recalculated_result = engine.calculate_normative(
                 selected_project,
                 group.id,
                 include_extended_kinematics=(
                     include_extended_kinematics_in_report
                 ),
+                include_mixed_capacity=mixed_capacity_mode,
             )
             recalculated_result.recommendations = RecommendationEngine.generate(
                 recalculated_result
@@ -299,11 +432,16 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                 and _parking_is_configured(parking_project, group.id)
             ):
                 parking_reference_result = engine.calculate_normative(
-                    parking_project,
+                    _project_for_capacity_mode(
+                        parking_project,
+                        group.id,
+                        include_mixed_capacity=mixed_capacity_mode,
+                    ),
                     group.id,
                     include_extended_kinematics=(
                         include_extended_kinematics_in_report
                     ),
+                    include_mixed_capacity=mixed_capacity_mode,
                 )
                 parking_reference_result.recommendations = (
                     RecommendationEngine.generate(parking_reference_result)
@@ -317,6 +455,9 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
             st.session_state.gost_result_include_extended_kinematics = (
                 include_extended_kinematics_in_report
             )
+            st.session_state.gost_result_include_mixed_capacity = (
+                mixed_capacity_mode
+            )
             result = recalculated_result
         except NormativeConfigurationError as exc:
             st.error(str(exc))
@@ -326,13 +467,18 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
     stored_kinematics_mode = st.session_state.get(
         "gost_report_include_extended_kinematics"
     )
+    stored_mixed_capacity_mode = st.session_state.get(
+        "gost_report_include_mixed_capacity",
+        False,
+    )
     report_mode_matches = (
         stored_parking_mode is not None
         and stored_kinematics_mode is not None
         and stored_parking_mode == include_parking_in_report
         and stored_kinematics_mode == include_extended_kinematics_in_report
+        and stored_mixed_capacity_mode == mixed_capacity_mode
     )
-    with report_controls[2]:
+    with report_controls[3]:
         available_gost_reports = [
             ("DOCX", st.session_state.get("gost_report_docx")),
             ("PDF", st.session_state.get("gost_report_pdf")),
@@ -348,6 +494,7 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                 if (
                     include_parking_in_report
                     or include_extended_kinematics_in_report
+                    or mixed_capacity_mode
                 )
                 else "Сформировать отчёт по ГОСТ"
             )
@@ -356,8 +503,8 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                 key="prepare_gost_report",
                 use_container_width=True,
                 help=(
-                    "Формирует DOCX и PDF без паркинга, если расположенная рядом "
-                    "галочка не установлена."
+                    "Формирует DOCX и PDF после окончательного выбора всех "
+                    "условий расчёта."
                 ),
             ):
                 report_project = st.session_state.get(
@@ -370,12 +517,18 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                         project,
                         include_parking=include_parking_in_report,
                     )
+                report_project = _project_for_capacity_mode(
+                    report_project,
+                    group.id,
+                    include_mixed_capacity=mixed_capacity_mode,
+                )
                 report_result = engine.calculate_normative(
                     report_project,
                     group.id,
                     include_extended_kinematics=(
                         include_extended_kinematics_in_report
                     ),
+                    include_mixed_capacity=mixed_capacity_mode,
                 )
                 report_result.recommendations = RecommendationEngine.generate(
                     report_result
@@ -388,6 +541,7 @@ if result and result.calculation_basis == "GOST_34758_2021_CLAUSE_7":
                         include_extended_kinematics=(
                             include_extended_kinematics_in_report
                         ),
+                        include_mixed_capacity=mixed_capacity_mode,
                     )
                 if gost_export_errors:
                     st.error(
@@ -461,6 +615,14 @@ if result:
             selected_mode_notes.append("с дополнительной инженерной кинематикой")
         else:
             selected_mode_notes.append("со строгой формулой межэтажного времени ГОСТ")
+        if mixed_capacity_mode:
+            selected_mode_notes.append(
+                "с инженерным расчётом лифтов разной грузоподъёмности"
+            )
+        elif mixed_capacity_detected:
+            selected_mode_notes.append(
+                "без учёта различий грузоподъёмности, по параметрам первого лифта"
+            )
         st.caption(
             "Показатели автоматически пересчитаны "
             + ", ".join(selected_mode_notes)

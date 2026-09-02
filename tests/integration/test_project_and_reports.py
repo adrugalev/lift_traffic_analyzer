@@ -347,6 +347,36 @@ def test_gost_report_contains_section_9_information() -> None:
     assert installation_table.cell(0, 0).text == "Параметр"
 
 
+def test_mixed_capacity_gost_report_lists_every_capacity_class() -> None:
+    project = ProjectService.create_default()
+    group = project.elevator_groups[0]
+    group.elevators[1].capacity_kg = 1275.0
+    group.elevators[1].nominal_passengers = 17
+
+    analytic = AnalyticEngine().calculate_normative(
+        project,
+        include_extended_kinematics=False,
+        include_mixed_capacity=True,
+    )
+    document = Document(BytesIO(build_gost_docx_report(project, analytic)))
+    text = "\n".join(
+        cell.text
+        for table in document.tables
+        for row in table.rows
+        for cell in row.cells
+    )
+
+    assert analytic.method == (
+        "Расчётный метод ГОСТ 34758-2021 "
+        "(с учётом лифтов разной грузоподъёмности)"
+    )
+    assert "1000 кг — 1 лифт; 1275 кг — 1 лифт" in text
+    assert "13 пасс. (1000 кг — 1 лифт)" in text
+    assert "17 пасс. (1275 кг — 1 лифт)" in text
+    assert "10 пасс. (1000 кг — 1 лифт)" in text
+    assert "14 пасс. (1275 кг — 1 лифт)" in text
+
+
 def test_gost_pdf_report_reopens_and_has_pages() -> None:
     project = ProjectService.create_default()
     analytic = AnalyticEngine().calculate_normative(project)

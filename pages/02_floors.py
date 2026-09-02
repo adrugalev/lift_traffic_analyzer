@@ -47,7 +47,52 @@ def floors_to_rows(floors: list[Floor]) -> list[dict[str, object]]:
     ]
 
 
+def _project_with_editor_floors(
+    project,
+    edited: pd.DataFrame,
+    occupancy_percent: int,
+):
+    """Возвращает проект с этажами и заселённостью из редактора."""
+
+    if edited.empty:
+        raise ValueError("Добавьте хотя бы один этаж.")
+    candidate = project.model_copy(deep=True)
+    group_ids = [group.id for group in candidate.elevator_groups]
+    candidate.floors = [
+        Floor(
+            number=int(row["Этаж"]),
+            label=str(row.get("Метка") or row["Этаж"]),
+            elevation_m=float(row.get("Отметка, м") or 0.0),
+            floor_height_m=float(row.get("Высота, м") or 0.0),
+            purpose=str(row.get("Назначение") or "Типовой этаж"),
+            population=int(row.get("Население") or 0),
+            served_by_group_ids=group_ids,
+            is_main_entrance=bool(row.get("Основной посадочный этаж")),
+            is_entrance=bool(row.get("Входной этаж")),
+            is_parking=bool(row.get("Паркинг")),
+            is_express=False,
+        )
+        for row in edited.to_dict("records")
+    ]
+    floor_numbers = sorted(floor.number for floor in candidate.floors)
+    travel_height = (
+        max(floor.elevation_m for floor in candidate.floors)
+        - min(floor.elevation_m for floor in candidate.floors)
+    )
+    for group in candidate.elevator_groups:
+        group.served_floors = floor_numbers.copy()
+        for elevator in group.elevators:
+            elevator.stops_count = len(floor_numbers)
+            elevator.travel_height_m = travel_height
+    candidate.building.occupancy_percent = int(occupancy_percent)
+    return synchronize_main_floor(candidate)
+
+
 rows = floors_to_rows(project.floors)
+project_editor_frame = normalize_floor_editor_frame(
+    pd.DataFrame(rows),
+    project.floors,
+)
 st.session_state.pop("imported_floors", None)
 
 editor_revision = st.session_state.get("floors_editor_revision", 0)
@@ -260,17 +305,29 @@ except Exception as exc:
     normalized_edited = edited.copy()
     st.error(f"Проверьте таблицу этажей: {exc}")
 else:
-    if not floor_editor_frames_equal(normalized_edited, editor_frame):
-        st.session_state.floors_editor_pending = normalized_edited.copy()
-        st.session_state.floors_editor_frame = normalized_edited.copy()
-        st.session_state.floors_editor_revision = editor_revision + 1
-        st.rerun()
+    if not floor_editor_frames_equal(normalized_edited, project_editor_frame):
+        try:
+            candidate = _project_with_editor_floors(
+                project,
+                normalized_edited,
+                int(st.session_state.floors_occupancy_percent),
+            )
+            update_project(candidate)
+            saved_frame = pd.DataFrame(floors_to_rows(candidate.floors))
+            st.session_state.floors_editor_pending = saved_frame.copy()
+            st.session_state.floors_editor_frame = saved_frame.copy()
+            st.session_state.floors_editor_revision = editor_revision + 1
+            st.session_state.floors_saved_notice = True
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Не удалось автоматически сохранить этажи: {exc}")
 edited = normalized_edited
 st.session_state.floors_editor_frame = edited.copy()
 
 st.caption(
     "Отметки пересчитываются автоматически по высотам этажей. Новая строка "
-    "получает следующий номер, метку, назначение, высоту и население типового этажа."
+    "получает следующий номер, метку, назначение, высоту и население типового "
+    "этажа. Изменения сохраняются сразу после редактирования ячейки."
 )
 
 occupancy_percent = st.slider(
@@ -285,6 +342,18 @@ occupancy_percent = st.slider(
         "в таблице. Суммарное население и расчётный поток пересчитываются сразу."
     ),
 )
+if int(occupancy_percent) != int(project.building.occupancy_percent):
+    try:
+        candidate = _project_with_editor_floors(
+            project,
+            edited,
+            int(occupancy_percent),
+        )
+        update_project(candidate)
+        st.session_state.floors_saved_notice = True
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Не удалось сохранить коэффициент заселённости: {exc}")
 st.caption(
     "Итоговое население рассчитывается как сумма значений «Население» "
     "в таблице × коэффициент заселённости. При 100% используются полные значения."
@@ -301,10 +370,10 @@ if bulk_fill_notice is not None:
     st.success(
         "Массовое заполнение применено."
         + added_text
-        + " Проверьте таблицу и сохраните этажи."
+        + " Изменения сохранены автоматически."
     )
 if st.session_state.pop("floors_saved_notice", False):
-    st.success("Этажи сохранены.")
+    st.success("Изменения этажей сохранены автоматически.")
 deleted_notice = st.session_state.pop("floors_deleted_notice", None)
 if deleted_notice:
     st.success(deleted_notice)
@@ -340,8 +409,8 @@ with st.expander("Массовое заполнение и расчёт насе
     if st.button(
         "Применить массовое заполнение",
         help=(
-            "Переносит заданные высоту и население в таблицу. Изменения необходимо "
-            "проверить и затем сохранить отдельной кнопкой."
+            "Переносит заданные высоту и население в таблицу и автоматически "
+            "сохраняет изменения."
         ),
     ):
         try:
@@ -363,57 +432,6 @@ with st.expander("Массовое заполнение и расчёт насе
                 "added_count": added_count
             }
             st.rerun()
-
-if st.button(
-    "Сохранить этажи",
-    type="primary",
-    help=(
-        "Сохраняет таблицу и коэффициент заселённости, синхронизирует основной "
-        "посадочный этаж и перечень остановок лифтовых групп."
-    ),
-):
-    try:
-        candidate = project.model_copy(deep=True)
-        group_ids = [group.id for group in candidate.elevator_groups]
-        candidate.floors = [
-            Floor(
-                number=int(row["Этаж"]),
-                label=str(row.get("Метка") or row["Этаж"]),
-                elevation_m=float(row.get("Отметка, м") or 0.0),
-                floor_height_m=float(row.get("Высота, м") or 0.0),
-                purpose=str(row.get("Назначение") or "Типовой этаж"),
-                population=int(row.get("Население") or 0),
-                served_by_group_ids=group_ids,
-                is_main_entrance=bool(
-                    row.get("Основной посадочный этаж")
-                ),
-                is_entrance=bool(row.get("Входной этаж")),
-                is_parking=bool(row.get("Паркинг")),
-                is_express=False,
-            )
-            for row in edited.to_dict("records")
-        ]
-        floor_numbers = sorted(floor.number for floor in candidate.floors)
-        for group in candidate.elevator_groups:
-            group.served_floors = floor_numbers.copy()
-            for elevator in group.elevators:
-                elevator.stops_count = len(floor_numbers)
-                elevator.travel_height_m = (
-                    max(floor.elevation_m for floor in candidate.floors)
-                    - min(floor.elevation_m for floor in candidate.floors)
-                )
-        candidate.building.occupancy_percent = int(occupancy_percent)
-        candidate = synchronize_main_floor(candidate)
-        update_project(candidate)
-        st.session_state.floors_editor_pending = pd.DataFrame(
-            floors_to_rows(candidate.floors)
-        )
-        st.session_state.floors_editor_frame = st.session_state.floors_editor_pending.copy()
-        st.session_state.floors_editor_revision = editor_revision + 1
-        st.session_state.floors_saved_notice = True
-        st.rerun()
-    except Exception as exc:
-        st.error(f"Не удалось сохранить этажи: {exc}")
 
 table_population = (
     int(pd.to_numeric(edited["Население"], errors="coerce").fillna(0).sum())

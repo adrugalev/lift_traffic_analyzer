@@ -125,6 +125,11 @@ project_elevator_rows = [
     elevator_to_editor_row(elevator) for elevator in existing_elevators
 ]
 stops_count = len(project.floors)
+project_editor_frame = normalize_elevator_editor_frame(
+    pd.DataFrame(project_elevator_rows),
+    existing_elevators,
+    stops_count,
+)
 editor_revision = int(st.session_state.get("elevators_editor_revision", 0))
 if st.session_state.get("elevators_editor_project_id") != project.id:
     st.session_state.pop("elevators_editor_pending", None)
@@ -383,28 +388,40 @@ else:
     normalized_edited, series_continued = continue_copied_series(
         previous_editor_frame, normalized_edited
     )
-    if series_continued:
-        st.session_state.elevators_editor_pending = normalized_edited.copy()
-        st.session_state.elevators_editor_frame = normalized_edited.copy()
-        st.session_state.elevators_editor_previous = normalized_edited.copy()
-        st.session_state.elevators_editor_revision = editor_revision + 1
-        st.rerun()
-    if not elevator_editor_frames_equal(normalized_edited, editor_frame):
-        st.session_state.elevators_editor_pending = normalized_edited.copy()
-        st.session_state.elevators_editor_frame = normalized_edited.copy()
-        st.session_state.elevators_editor_revision = editor_revision + 1
-        st.rerun()
+    if not elevator_editor_frames_equal(
+        normalized_edited,
+        project_editor_frame,
+    ):
+        try:
+            candidate, elevators = _project_with_editor_elevators(
+                project,
+                normalized_edited,
+                existing_elevators,
+            )
+            update_project(candidate)
+            saved_frame = pd.DataFrame(
+                [elevator_to_editor_row(elevator) for elevator in elevators]
+            )
+            st.session_state.elevators_editor_pending = saved_frame.copy()
+            st.session_state.elevators_editor_frame = saved_frame.copy()
+            st.session_state.elevators_editor_previous = saved_frame.copy()
+            st.session_state.elevators_editor_revision = editor_revision + 1
+            st.session_state.elevators_saved_notice = True
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Не удалось автоматически сохранить лифты: {exc}")
 edited = normalized_edited
 st.session_state.elevators_editor_frame = edited.copy()
 st.session_state.elevators_editor_previous = edited.copy()
 
 st.caption(
     "Новая строка продолжает нумерацию и получает параметры предыдущего лифта. "
-    "Количество остановок синхронизируется с таблицей этажей автоматически."
+    "Количество остановок синхронизируется с таблицей этажей автоматически. "
+    "Изменения сохраняются сразу после редактирования ячейки."
 )
 
 if st.session_state.pop("elevators_saved_notice", False):
-    st.success("Лифты сохранены.")
+    st.success("Изменения в таблице лифтов сохранены автоматически.")
 if notice := st.session_state.pop("elevator_deleted_notice", None):
     st.success(notice)
 
@@ -428,30 +445,3 @@ with st.expander("Массовое заполнение параметров л�
         st.session_state.elevators_editor_frame = edited.copy()
         st.session_state.elevators_editor_revision = editor_revision + 1
         st.rerun()
-
-if st.button(
-    "Сохранить лифты",
-    type="primary",
-    help=(
-        "Сохраняет таблицу. Все лифты автоматически назначаются на все этажи "
-        "проекта."
-    ),
-):
-    try:
-        candidate, elevators = _project_with_editor_elevators(
-            project,
-            edited,
-            existing_elevators,
-        )
-        update_project(candidate)
-        st.session_state.elevators_editor_pending = pd.DataFrame(
-            [elevator_to_editor_row(elevator) for elevator in elevators]
-        )
-        st.session_state.elevators_editor_frame = (
-            st.session_state.elevators_editor_pending.copy()
-        )
-        st.session_state.elevators_editor_revision = editor_revision + 1
-        st.session_state.elevators_saved_notice = True
-        st.rerun()
-    except Exception as exc:
-        st.error(f"Не удалось сохранить лифты: {exc}")

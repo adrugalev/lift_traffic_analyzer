@@ -30,6 +30,13 @@ FORMULA_GROUPS = (
         ),
     ),
     (
+        "Лифты разной грузоподъёмности (инженерное расширение)",
+        (
+            "mixed_group_interval",
+            "mixed_group_handling_capacity",
+        ),
+    ),
+    (
         "Инженерный учёт паркинга (не формулы ГОСТ)",
         (
             "parking_lower_reversal",
@@ -106,6 +113,8 @@ FORMULA_VARIABLES_IN_ORDER = {
     "gost_round_trip_time": ("T", "Nр", "tэт.н", "S", "tост", "Pк", "tв"),
     "gost_interval": ("tи", "T", "Nл"),
     "gost_group_handling_capacity": ("P5", "Pк", "Nл", "T", "tи"),
+    "mixed_group_interval": ("tи,разн", "T1…Tn", "n"),
+    "mixed_group_handling_capacity": ("P5,разн", "Pк,i", "Ti", "i", "n"),
     "gost_handling_capacity_percent": ("%P5", "P5", "A"),
     "parking_lower_reversal": ("Hм", "M", "Pк", "qм", "k"),
     "parking_expected_depth": ("Dм", "Δhк", "M", "Pк", "qм", "k"),
@@ -209,6 +218,14 @@ FORMULA_LATEX = {
         r"P_5=\frac{300P_{\mathrm{к}}N_{\mathrm{л}}}{T}"
         r"=\frac{300P_{\mathrm{к}}}{t_{\mathrm{и}}}"
     ),
+    "mixed_group_interval": (
+        r"t_{\mathrm{и,разн}}\approx"
+        r"\frac{T_1+T_2+\ldots+T_n}{n^2}"
+    ),
+    "mixed_group_handling_capacity": (
+        r"P_{5,\mathrm{разн}}="
+        r"\sum_{i=1}^{n}\frac{300P_{\mathrm{к},i}}{T_i}"
+    ),
     "gost_handling_capacity_percent": r"\%P_5=\frac{100P_5}{A}",
     "parking_lower_reversal": (
         r"H_{\mathrm{м}}=\sum_{k=1}^{M}\left[1-\left(1-q_{\mathrm{м}}"
@@ -307,6 +324,17 @@ FORMULA_USAGE = {
     "gost_interval": "Определяет расчётный интервал движения лифтов группы.",
     "gost_group_handling_capacity": (
         "Определяет число пассажиров, перевозимых группой за пять минут."
+    ),
+    "mixed_group_interval": (
+        "Для каждой кабины отдельно рассчитывается круговой рейс, равный её "
+        "индивидуальному интервалу. Интервал неоднородной группы принимается "
+        "как сумма индивидуальных интервалов, делённая на квадрат числа кабин. "
+        "Формула напрямую не опубликована в ГОСТ 34758-2021."
+    ),
+    "mixed_group_handling_capacity": (
+        "Провозная способность каждой кабины определяется по её расчётной "
+        "вместимости и индивидуальному интервалу, после чего значения кабин "
+        "суммируются. Это инженерное расширение расчёта по ГОСТ."
     ),
     "gost_handling_capacity_percent": (
         "Переводит пятиминутную провозную способность в процент населения "
