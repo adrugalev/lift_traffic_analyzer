@@ -221,6 +221,56 @@ def apply_floor_bulk_fill(
     return normalized, len(missing_numbers)
 
 
+def delete_floor_rows(
+    frame: pd.DataFrame,
+    existing_floors: list[Floor],
+    floor_numbers: list[int],
+) -> tuple[pd.DataFrame, int | None]:
+    """Удаляет выбранные этажи и при необходимости назначает новый главный этаж.
+
+    Возвращает обновлённую таблицу и номер автоматически назначенного основного
+    посадочного этажа. В проекте должен остаться хотя бы один непарковочный этаж.
+    """
+
+    normalized = normalize_floor_editor_frame(frame, existing_floors)
+    requested = {int(number) for number in floor_numbers}
+    if not requested:
+        return normalized, None
+
+    present = set(int(number) for number in normalized["Этаж"].tolist())
+    unknown = requested - present
+    if unknown:
+        formatted = ", ".join(str(number) for number in sorted(unknown))
+        raise ValueError(f"Не найдены этажи: {formatted}.")
+    if requested == present:
+        raise ValueError("В проекте должен оставаться хотя бы один этаж.")
+
+    reduced = normalized.loc[
+        ~normalized["Этаж"].isin(requested)
+    ].reset_index(drop=True)
+    available_main = reduced.loc[~reduced["Паркинг"].astype(bool)]
+    if available_main.empty:
+        raise ValueError(
+            "После удаления должен оставаться хотя бы один непарковочный этаж."
+        )
+
+    assigned_main: int | None = None
+    if not reduced["Основной посадочный этаж"].astype(bool).any():
+        entrance_candidates = available_main.loc[
+            available_main["Входной этаж"].astype(bool)
+        ]
+        candidates = (
+            entrance_candidates if not entrance_candidates.empty else available_main
+        )
+        selected_index = candidates["Этаж"].astype(int).idxmin()
+        reduced.loc[:, "Основной посадочный этаж"] = False
+        reduced.loc[selected_index, "Основной посадочный этаж"] = True
+        reduced.loc[selected_index, "Входной этаж"] = True
+        assigned_main = int(reduced.loc[selected_index, "Этаж"])
+
+    return normalize_floor_editor_frame(reduced, existing_floors), assigned_main
+
+
 def floor_editor_frames_equal(left: pd.DataFrame, right: pd.DataFrame) -> bool:
     """Сравнивает кадры без ложных различий из-за pandas dtype."""
 

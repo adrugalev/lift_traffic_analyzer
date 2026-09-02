@@ -10,6 +10,7 @@ from src.ui import configure_page, ensure_session, update_project
 from src.utils.decimal_input import format_decimal
 from src.utils.floor_editor import (
     apply_floor_bulk_fill,
+    delete_floor_rows,
     floor_editor_frames_equal,
     normalize_floor_editor_frame,
 )
@@ -68,13 +69,47 @@ st.session_state.setdefault(
     project.building.occupancy_percent,
 )
 
-if st.button(
-    "Добавить этаж",
-    help=(
-        "Добавляет следующий надземный этаж и автоматически заполняет номер, "
-        "метку, высоту, назначение и население по последнему типовому этажу."
-    ),
-):
+add_column, selector_column, delete_column = st.columns(
+    [1, 2, 1], vertical_alignment="bottom"
+)
+with add_column:
+    add_floor = st.button(
+        "Добавить этаж",
+        help=(
+            "Добавляет следующий надземный этаж и автоматически заполняет номер, "
+            "метку, высоту, назначение и население по последнему типовому этажу."
+        ),
+    )
+with selector_column:
+    floors_to_delete = st.multiselect(
+        "Этажи для удаления",
+        options=[int(number) for number in editor_frame["Этаж"].tolist()],
+        format_func=lambda number: next(
+            (
+                f"Этаж {number} — {row.get('Метка') or number}"
+                for row in editor_frame.to_dict("records")
+                if int(row["Этаж"]) == number
+            ),
+            f"Этаж {number}",
+        ),
+        key="floors_to_delete",
+        placeholder="Выберите этажи",
+        help="Отметьте один или несколько этажей, которые требуется удалить.",
+    )
+with delete_column:
+    delete_floors = st.button(
+        "Удалить",
+        disabled=(
+            not floors_to_delete
+            or len(floors_to_delete) >= len(editor_frame)
+        ),
+        help=(
+            "Удаляет все отмеченные этажи. В проекте должен остаться хотя бы "
+            "один непарковочный этаж."
+        ),
+    )
+
+if add_floor:
     expanded = pd.concat(
         [editor_frame, pd.DataFrame([{}])],
         ignore_index=True,
@@ -88,6 +123,56 @@ if st.button(
         st.session_state.floors_editor_frame = expanded.copy()
         st.session_state.floors_editor_revision = editor_revision + 1
         st.rerun()
+
+if delete_floors and floors_to_delete:
+    try:
+        reduced, assigned_main = delete_floor_rows(
+            editor_frame,
+            project.floors,
+            floors_to_delete,
+        )
+        candidate = project.model_copy(deep=True)
+        group_ids = [group.id for group in candidate.elevator_groups]
+        candidate.floors = [
+            Floor(
+                number=int(row["Этаж"]),
+                label=str(row.get("Метка") or row["Этаж"]),
+                elevation_m=float(row.get("Отметка, м") or 0.0),
+                floor_height_m=float(row.get("Высота, м") or 0.0),
+                purpose=str(row.get("Назначение") or "Типовой этаж"),
+                population=int(row.get("Население") or 0),
+                served_by_group_ids=group_ids,
+                is_main_entrance=bool(row.get("Основной посадочный этаж")),
+                is_entrance=bool(row.get("Входной этаж")),
+                is_parking=bool(row.get("Паркинг")),
+                is_express=False,
+            )
+            for row in reduced.to_dict("records")
+        ]
+        floor_numbers = sorted(floor.number for floor in candidate.floors)
+        travel_height = (
+            max(floor.elevation_m for floor in candidate.floors)
+            - min(floor.elevation_m for floor in candidate.floors)
+        )
+        for group in candidate.elevator_groups:
+            group.served_floors = floor_numbers.copy()
+            for elevator in group.elevators:
+                elevator.stops_count = len(floor_numbers)
+                elevator.travel_height_m = travel_height
+        candidate = synchronize_main_floor(candidate)
+        update_project(candidate)
+        st.session_state.floors_editor_pending = reduced.copy()
+        st.session_state.floors_editor_frame = reduced.copy()
+        st.session_state.floors_editor_revision = editor_revision + 1
+        st.session_state.pop("floors_to_delete", None)
+        deleted = ", ".join(str(number) for number in sorted(floors_to_delete))
+        notice = f"Удалены этажи: {deleted}."
+        if assigned_main is not None:
+            notice += f" Основным посадочным назначен этаж {assigned_main}."
+        st.session_state.floors_deleted_notice = notice
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Не удалось удалить этажи: {exc}")
 
 display_frame = editor_frame.sort_values("Этаж", ascending=False).reset_index(drop=True)
 display_frame["Высота, м"] = display_frame["Высота, м"].map(format_decimal)
@@ -221,6 +306,9 @@ if bulk_fill_notice is not None:
     )
 if st.session_state.pop("floors_saved_notice", False):
     st.success("Этажи сохранены.")
+deleted_notice = st.session_state.pop("floors_deleted_notice", None)
+if deleted_notice:
+    st.success(deleted_notice)
 
 with st.expander("Массовое заполнение и расчёт населения"):
     c1, c2, c3, c4 = st.columns(4)

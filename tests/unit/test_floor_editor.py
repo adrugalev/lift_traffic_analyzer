@@ -6,7 +6,11 @@ import pandas as pd
 import pytest
 
 from src.services.project_service import ProjectService
-from src.utils.floor_editor import apply_floor_bulk_fill, normalize_floor_editor_frame
+from src.utils.floor_editor import (
+    apply_floor_bulk_fill,
+    delete_floor_rows,
+    normalize_floor_editor_frame,
+)
 
 
 def _frame(project) -> pd.DataFrame:
@@ -139,3 +143,40 @@ def test_height_accepts_comma_or_dot_as_decimal_separator() -> None:
     heights = normalized.set_index("Этаж")["Высота, м"].to_dict()
     assert heights[1] == pytest.approx(3.25)
     assert heights[2] == pytest.approx(3.5)
+
+
+def test_delete_multiple_floors_recalculates_elevations() -> None:
+    project = ProjectService.create_default(floors_count=5)
+
+    result, assigned_main = delete_floor_rows(
+        _frame(project), project.floors, [3, 5]
+    )
+
+    assert result["Этаж"].tolist() == [1, 2, 4]
+    assert result.set_index("Этаж")["Отметка, м"].to_dict() == {
+        1: pytest.approx(0.0),
+        2: pytest.approx(3.0),
+        4: pytest.approx(6.0),
+    }
+    assert assigned_main is None
+
+
+def test_delete_main_floor_assigns_lowest_remaining_non_parking_floor() -> None:
+    project = ProjectService.create_default(floors_count=3)
+
+    result, assigned_main = delete_floor_rows(
+        _frame(project), project.floors, [1]
+    )
+
+    assert assigned_main == 2
+    assert result.loc[
+        result["Основной посадочный этаж"], "Этаж"
+    ].tolist() == [2]
+    assert result.set_index("Этаж").loc[2, "Отметка, м"] == pytest.approx(0.0)
+
+
+def test_delete_all_floors_is_rejected() -> None:
+    project = ProjectService.create_default(floors_count=2)
+
+    with pytest.raises(ValueError, match="хотя бы один этаж"):
+        delete_floor_rows(_frame(project), project.floors, [1, 2])
