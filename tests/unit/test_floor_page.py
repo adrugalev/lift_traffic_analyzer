@@ -48,3 +48,7 @@ def test_page_deletes_multiple_floors(monkeypatch) -> None:
     assert app.session_state["analytic_result"] is None
     assert app.session_state["simulation_result"] is None
     assert app.session_state["variants"] == []
+    selector_after_deletion = next(
+        item for item in app.multiselect if item.label == "Этажи для удаления"
+    )
+    assert selector_after_deletion.value == []

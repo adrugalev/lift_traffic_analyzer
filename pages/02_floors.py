@@ -92,7 +92,7 @@ with selector_column:
             ),
             f"Этаж {number}",
         ),
-        key="floors_to_delete",
+        key=f"floors_to_delete_{editor_revision}",
         placeholder="Выберите этажи",
         help="Отметьте один или несколько этажей, которые требуется удалить.",
     )
@@ -164,7 +164,6 @@ if delete_floors and floors_to_delete:
         st.session_state.floors_editor_pending = reduced.copy()
         st.session_state.floors_editor_frame = reduced.copy()
         st.session_state.floors_editor_revision = editor_revision + 1
-        st.session_state.pop("floors_to_delete", None)
         deleted = ", ".join(str(number) for number in sorted(floors_to_delete))
         notice = f"Удалены этажи: {deleted}."
         if assigned_main is not None:
