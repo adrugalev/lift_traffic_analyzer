@@ -254,7 +254,7 @@ def delete_floor_rows(
             "После удаления должен оставаться хотя бы один непарковочный этаж."
         )
 
-    assigned_main: int | None = None
+    main_was_assigned = False
     if not reduced["Основной посадочный этаж"].astype(bool).any():
         entrance_candidates = available_main.loc[
             available_main["Входной этаж"].astype(bool)
@@ -266,9 +266,59 @@ def delete_floor_rows(
         reduced.loc[:, "Основной посадочный этаж"] = False
         reduced.loc[selected_index, "Основной посадочный этаж"] = True
         reduced.loc[selected_index, "Входной этаж"] = True
-        assigned_main = int(reduced.loc[selected_index, "Этаж"])
+        main_was_assigned = True
 
-    return normalize_floor_editor_frame(reduced, existing_floors), assigned_main
+    # После удаления этажи должны образовывать непрерывную нумерацию. Надземные
+    # уровни нумеруются снизу вверх от 1, парковочные — от ближайшего к входу
+    # уровня вниз: −1, −2 и далее.
+    reduced = normalize_floor_editor_frame(reduced, existing_floors)
+    records = reduced.to_dict("records")
+    above_ground = sorted(
+        (record for record in records if not bool(record["Паркинг"])),
+        key=lambda record: float(record["Отметка, м"]),
+    )
+    parking = sorted(
+        (record for record in records if bool(record["Паркинг"])),
+        key=lambda record: float(record["Отметка, м"]),
+        reverse=True,
+    )
+
+    for new_number, record in enumerate(above_ground, start=1):
+        old_number = int(record["Этаж"])
+        old_label = _text(record.get("Метка"))
+        automatic_label = old_label in {"", str(old_number), "Вход"}
+        record["Этаж"] = new_number
+        if automatic_label:
+            record["Метка"] = (
+                "Вход" if bool(record["Основной посадочный этаж"]) else str(new_number)
+            )
+        if bool(record["Основной посадочный этаж"]) and _text(
+            record.get("Назначение")
+        ) in {"Типовой этаж", "Жилой этаж", "Входная группа"}:
+            record["Назначение"] = "Входная группа"
+
+    for parking_index, record in enumerate(parking, start=1):
+        old_number = int(record["Этаж"])
+        old_label = _text(record.get("Метка"))
+        automatic_label = old_label in {"", str(old_number), f"P{abs(old_number)}"}
+        record["Этаж"] = -parking_index
+        if automatic_label:
+            record["Метка"] = f"P{parking_index}"
+
+    renumbered = normalize_floor_editor_frame(
+        pd.DataFrame([*parking, *above_ground], columns=FLOOR_EDITOR_COLUMNS),
+        existing_floors,
+    )
+    assigned_main = (
+        int(
+            renumbered.loc[
+                renumbered["Основной посадочный этаж"].astype(bool), "Этаж"
+            ].iloc[0]
+        )
+        if main_was_assigned
+        else None
+    )
+    return renumbered, assigned_main
 
 
 def floor_editor_frames_equal(left: pd.DataFrame, right: pd.DataFrame) -> bool:

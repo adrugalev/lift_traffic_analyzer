@@ -43,7 +43,7 @@ def test_page_deletes_multiple_floors(monkeypatch) -> None:
     assert [floor.number for floor in app.session_state["project"].floors] == [
         1,
         2,
-        4,
+        3,
     ]
     assert app.session_state["analytic_result"] is None
     assert app.session_state["simulation_result"] is None

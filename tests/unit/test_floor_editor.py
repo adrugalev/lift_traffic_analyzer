@@ -152,11 +152,11 @@ def test_delete_multiple_floors_recalculates_elevations() -> None:
         _frame(project), project.floors, [3, 5]
     )
 
-    assert result["Этаж"].tolist() == [1, 2, 4]
+    assert result["Этаж"].tolist() == [1, 2, 3]
     assert result.set_index("Этаж")["Отметка, м"].to_dict() == {
         1: pytest.approx(0.0),
         2: pytest.approx(3.0),
-        4: pytest.approx(6.0),
+        3: pytest.approx(6.0),
     }
     assert assigned_main is None
 
@@ -168,11 +168,35 @@ def test_delete_main_floor_assigns_lowest_remaining_non_parking_floor() -> None:
         _frame(project), project.floors, [1]
     )
 
-    assert assigned_main == 2
+    assert assigned_main == 1
     assert result.loc[
         result["Основной посадочный этаж"], "Этаж"
-    ].tolist() == [2]
-    assert result.set_index("Этаж").loc[2, "Отметка, м"] == pytest.approx(0.0)
+    ].tolist() == [1]
+    assert result.set_index("Этаж").loc[1, "Отметка, м"] == pytest.approx(0.0)
+    assert result.set_index("Этаж").loc[1, "Метка"] == "Вход"
+
+
+def test_delete_parking_floor_renumbers_remaining_parking_levels() -> None:
+    project = ProjectService.create_default(floors_count=2)
+    frame = pd.concat(
+        [
+            _frame(project),
+            pd.DataFrame(
+                [
+                    {"Этаж": -2, "Высота, м": 3.3},
+                    {"Этаж": -1, "Высота, м": 3.3},
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    normalized = normalize_floor_editor_frame(frame, project.floors)
+
+    result, _ = delete_floor_rows(normalized, project.floors, [-1])
+
+    parking = result.loc[result["Паркинг"]]
+    assert parking["Этаж"].tolist() == [-1]
+    assert parking["Метка"].tolist() == ["P1"]
 
 
 def test_delete_all_floors_is_rejected() -> None:
